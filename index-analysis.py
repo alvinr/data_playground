@@ -117,7 +117,7 @@ def plot_hist(labels, values, title, xlabel, ylabel, asPct=False, runningTot=Fal
   if ( asPct == True ):
     plot_vals = calc_by_pct(values)
 
-  contents = { 'Size': labels[:-1], 'left': plot_vals[:-1] }
+  contents = { 'X': labels[:-1], 'left': plot_vals[:-1] }
 
   if ( runningTot == True ):
     rt = np.cumsum(plot_vals)     
@@ -127,14 +127,17 @@ def plot_hist(labels, values, title, xlabel, ylabel, asPct=False, runningTot=Fal
     secondary = True
 
   df = pd.DataFrame(contents, index=labels[:-1])
-  ax = df.plot(kind='bar', figsize=(12, 8), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False)
+  ax = df.plot(kind='bar', figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False)
 #  ax.set_xlim(max(plot_vals) * 0.1)
 #  if ( secondary == True ):
 #    ax2 = df.plot('Chart', 'right', secondary_y=True, ax=ax)
 
-  ax.bar_label(ax.containers[0], label_type='edge')
+  ax.bar_label(ax.containers[0], label_type='edge', rotation=30)
+  ax.set_xticklabels(df['X'], rotation=90, ha='right')
+
   if ( secondary == True ):
-    ax.bar_label(ax.containers[1], label_type='edge')
+    ax.bar_label(ax.containers[1], label_type='edge', rotation=30)
+
   ax.margins(y=0.1)
 
 
@@ -162,7 +165,7 @@ plot_hist(index_size_labels, cluster_ram_summary, 'Cluster RAM Size Distribution
 
 plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster RAM Size Distribution (as percentage)', 'Cluster RAM Size (GB)', 'Percentage', True)
 
-plot_hist(index_size_labels, cluster_summary, 'Cluster Count by Max Index Size', 'Max Index Size (GB) in cluster', 'Percentage', True)
+plot_hist(index_size_labels, cluster_summary, 'Cluster Count Distribution (as percentage) by Cluster Max Index Size', 'Max Index Size (GB) in cluster', 'Percentage', True)
 
 
 plt.show()
