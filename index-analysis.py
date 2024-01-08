@@ -1,6 +1,6 @@
 import numpy as np
 
-index_size_bins = [0, 1] + [int(x)*30 for x in range(1,8)] + [np.inf]
+index_size_bins = [0, 1] + [int(x)*30 for x in range(1,36)] + [np.inf]
 index_size_labels = ["<"+ str(x)+"GB" for x in index_size_bins]
 index_size_labels[0] = ">1MB"
 index_size_labels[-2] = ">" + str(index_size_bins[-3]) + "GB"
@@ -68,7 +68,6 @@ def process(idxfile, ramfile):
   with open(idxfile, newline='') as f:
     reader = csv.reader(f, delimiter=',', quotechar='"')
     for row in reader:
-      clusters_examined += 1
       idx_sizes = [x for x in row[1:] if x != '']
 
       if len(idx_sizes) == 0:
@@ -80,6 +79,7 @@ def process(idxfile, ramfile):
       if ( len(idx_sizes) == 0 ):
         continue
 
+      clusters_examined += 1
       idx_counts = [0] * len(index_size_bins)
       update_hist(idx_sizes, index_size_bins, idx_counts)
 #      writer.writerow([row[0], idx_counts[:-1]])
@@ -119,8 +119,8 @@ def process(idxfile, ramfile):
 
   print("=== Stats ")
   print("Clusters examined %d" % clusters_examined)
-  print("Lagest Cluster by Total Index Size %d (GB)" % largest_cluster_found)
-  print("Lagest Index %d (GB)" % max_index_size_found)
+  print("Largest Cluster by Total Index Size %d (GB)" % largest_cluster_found)
+  print("Largest Index %d (GB)" % max_index_size_found)
   print("Largest Cluster by RAM %d (GB)" % max(cluster_details, key=lambda x:x['ram_gb'])["ram_gb"])
 
 def plot():
@@ -132,7 +132,7 @@ def plot():
     pct_of_total = [round(i/total*100, 2) for i in source]
     return pct_of_total
 
-  def plot_hist(labels, values, title, xlabel, ylabel, asPct=False, runningTot=False):
+  def plot_hist(labels, values, title, xlabel, ylabel, asPct=False, runningTot=False, color=['blue', 'green']):
     cols = ['left']
     plot_vals = values
     secondary = False
@@ -150,13 +150,13 @@ def plot():
       secondary = True
 
     df = pd.DataFrame(contents, index=labels[:-1])
-    ax = df.plot(kind='bar', figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False)
-    ax.bar_label(ax.containers[0], label_type='edge', rotation=30)
+    ax = df.plot(kind='bar', figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, color=color)
+    ax.bar_label(ax.containers[0], label_type='edge', rotation=90, padding=5)
     ax.set_xticklabels(df['X'], rotation=90, ha='right')
     ax.margins(y=0.1)
 
     if ( secondary == True ):
-      ax.bar_label(ax.containers[1], label_type='edge', rotation=30)
+      ax.bar_label(ax.containers[1], label_type='edge', rotation=90, padding=5)
 
     return df
 
@@ -165,10 +165,12 @@ def plot():
   plot_hist(cluster_size_labels, cluster_size_summary, 'Cluster Size Distribution', 'Cluster Size (TB)', 'Cluster Count')
   plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster RAM Size Distribution', 'Cluster RAM Size (GB)', 'Cluster Count')
   plot_hist(index_size_labels, cluster_ram_summary, 'Cluster RAM total by Cluster Max Index Size', 'Max Index Size (GB) in cluster', 'RAM (GB)')
-  plot_hist(index_size_labels, idx_summary, 'Index Size Distribution (as percentage) across all Clusters', 'Index Size (GB)', 'Percentage', True)
+  plot_hist(index_size_labels, idx_summary, 'Index Size Distribution (as percentage) across all Clusters', 'Index Size (GB)', 'Percentage', True, color=['orange'])
   plot_hist(index_size_labels, cluster_ram_summary, 'Cluster RAM Size Distribution (as percentage) by Largest Index in Cluster', 'Index Size (GB)', 'Percentage', True, True)
-  plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster RAM Size Distribution (as percentage)', 'Cluster RAM Size (GB)', 'Percentage', True)
-  plot_hist(index_size_labels, cluster_summary, 'Cluster Count Distribution (as percentage) by Cluster Max Index Size', 'Max Index Size (GB) in cluster', 'Percentage', True)
+  plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster Count (as percentage) by RAM Size', 'Cluster RAM Size (GB)', 'Percentage', True)
+  plot_hist(index_size_labels, cluster_summary, 'Cluster Count Distribution (as percentage) by Cluster Max Index Size', 'Max Index Size (GB) in cluster', 'Percentage', True, 
+            color=['green'])
+
   plt.show()
 
 def doit():
@@ -177,6 +179,7 @@ def doit():
   parser=argparse.ArgumentParser()
   parser.add_argument("--idxfile", help="Like the file to load", default="cat_indices_output.txt")
   parser.add_argument("--ramfile", help="like the RAM sizes for the clusters", default="clusters.csv")
+#  parser.add_argument("--numbuckets", help="Number of Buckets", default=8, type=int)
   args=parser.parse_args()
 
   process(args.idxfile, args.ramfile)
@@ -184,7 +187,4 @@ def doit():
 
 if __name__ == '__main__':
     doit()
-
-
-
 
