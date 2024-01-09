@@ -1,32 +1,29 @@
-import numpy as np
+index_size_bins = []
+index_size_labels = []
+idx_summary = []
+clusyter_summary = []
+cluster_ram_summary = []
 
-index_size_bins = [0, 1] + [int(x)*30 for x in range(1,36)] + [np.inf]
-index_size_labels = ["<"+ str(x)+"GB" for x in index_size_bins]
-index_size_labels[0] = ">1MB"
-index_size_labels[-2] = ">" + str(index_size_bins[-3]) + "GB"
-idx_summary = [0] * len(index_size_bins) 
-cluster_summary = [0] * len(index_size_bins)
-cluster_ram_summary = [0] * len(index_size_bins)
+cluster_size_bins = []
+cluster_size_labels  = []
+cluster_size_summary = []
 
-cluster_size_bins = [0] + [int(x)*50 for x in range(1,20)] + [np.inf]
-cluster_size_labels  = ["<"+ str(x)+"GB" for x in cluster_size_bins]
-cluster_size_labels[-2] = ">" + str(cluster_size_bins[-3]) + "GB"
-cluster_size_labels[0] = ">0GB"
-cluster_size_summary = [0] * len(cluster_size_bins)
+cluster_ram_size_bins = []
+cluster_ram_size_labels  = []
+cluster_ram_size_summary = []
+cluster_ram_size_summary_ids = []
 
-cluster_ram_size_bins = [0] + [int(x)*30 for x in range(1,10)] + [np.inf]
-cluster_ram_size_labels  = ["<"+ str(x)+"GB" for x in cluster_ram_size_bins]
-cluster_ram_size_labels[-2] = ">" + str(cluster_ram_size_bins[-3]) + "GB"
-cluster_ram_size_labels[0] = ">0GB"
-cluster_ram_size_summary = [0] * len(cluster_ram_size_bins)
-cluster_ram_size_summary_ids = [ [ ] for j in range(len(cluster_ram_size_bins))] 
+ram_clusters_misses = 0
 
 def process(idxfile, ramfile):
   import csv
+  import numpy as np
 
   def lookup(l, k, v, ret, default):
     res = [x[ret] for x in l if x[k] == v]
     if ( len(res) == 0 ):
+      global ram_clusters_misses
+      ram_clusters_misses += 1
       return default
     else:
       return res[0]
@@ -65,27 +62,30 @@ def process(idxfile, ramfile):
 
   # Raw index size file
   clusters_examined = 0
+  no_indexes_reported = 0
+  no_indexes_over_1mb = 0
+
   with open(idxfile, newline='') as f:
     reader = csv.reader(f, delimiter=',', quotechar='"')
     for row in reader:
       idx_sizes = [x for x in row[1:] if x != '']
 
       if len(idx_sizes) == 0:
+        no_indexes_reported += 1
         continue
 
       idx_sizes = convert_to_bytes(idx_sizes)
       idx_sizes = [i/(1024**3) for i in idx_sizes if i > (1024**2)]
 
       if ( len(idx_sizes) == 0 ):
+        no_indexes_over_1mb += 1
         continue
 
       clusters_examined += 1
       idx_counts = [0] * len(index_size_bins)
       update_hist(idx_sizes, index_size_bins, idx_counts)
-#      writer.writerow([row[0], idx_counts[:-1]])
-#      idx_summary = [idx_counts[i] + idx_summary[i] for i in range(len(idx_counts))]
-      for i in range(len(idx_summary)):
-        idx_summary[i] += idx_counts[i]
+      global idx_summary
+      idx_summary = np.add(idx_counts, idx_summary)
 
       non_zero = [i for i, idx_size in enumerate(idx_counts) if idx_size != 0 ]
       cluster_summary[non_zero[-1]] += 1
@@ -119,20 +119,24 @@ def process(idxfile, ramfile):
 
   print("=== Stats ")
   print("Clusters examined %d" % clusters_examined)
+  print("Clusters with no indexes %d" % no_indexes_reported)
+  print("Clusters with no indexes over 1MB  %d" % no_indexes_over_1mb)
   print("Largest Cluster by Total Index Size %d (GB)" % largest_cluster_found)
   print("Largest Index %d (GB)" % max_index_size_found)
   print("Largest Cluster by RAM %d (GB)" % max(cluster_details, key=lambda x:x['ram_gb'])["ram_gb"])
+  print("RAM clusters misses %d" % ram_clusters_misses)
 
 def plot():
   import pandas as pd
   import matplotlib.pyplot as plt
+  import numpy as np
 
   def calc_by_pct(source):
     total=sum(source)
     pct_of_total = [round(i/total*100, 2) for i in source]
     return pct_of_total
 
-  def plot_hist(labels, values, title, xlabel, ylabel, asPct=False, runningTot=False, color=['blue', 'green']):
+  def plot_hist(labels, values, title, xlabel, ylabel, asPct=False, runningTot=False, color=['blue', 'orange']):
     cols = ['left']
     plot_vals = values
     secondary = False
@@ -150,13 +154,16 @@ def plot():
       secondary = True
 
     df = pd.DataFrame(contents, index=labels[:-1])
-    ax = df.plot(kind='bar', figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, color=color)
-    ax.bar_label(ax.containers[0], label_type='edge', rotation=90, padding=5)
+    ax = df.plot(kind='bar', figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, color=color, edgecolor='white', linewidth=1.75)
+    rot = 90
+    if ( secondary != True ):
+      rot = 45
+    ax.bar_label(ax.containers[0], label_type='edge', rotation=rot, padding=5)
     ax.set_xticklabels(df['X'], rotation=90, ha='right')
     ax.margins(y=0.1)
 
     if ( secondary == True ):
-      ax.bar_label(ax.containers[1], label_type='edge', rotation=90, padding=5)
+      ax.bar_label(ax.containers[1], label_type='edge', rotation=45, padding=5)
 
     return df
 
@@ -179,8 +186,47 @@ def doit():
   parser=argparse.ArgumentParser()
   parser.add_argument("--idxfile", help="Like the file to load", default="cat_indices_output.txt")
   parser.add_argument("--ramfile", help="like the RAM sizes for the clusters", default="clusters.csv")
-#  parser.add_argument("--numbuckets", help="Number of Buckets", default=8, type=int)
+  parser.add_argument("--numidxbuckets", help="Number of Index Buckets", default=8, type=int)
+  parser.add_argument("--idxbucketsize", help="Size of Index Buckets", default=30, type=int)
   args=parser.parse_args()
+
+  import numpy as np
+
+  global index_size_bins 
+  global index_size_labels
+  global idx_summary
+  global cluster_summary
+  global cluster_ram_summary
+
+  global cluster_size_bins
+  global cluster_size_labels
+  global cluster_size_summary
+
+  global cluster_ram_size_bins
+  global cluster_ram_size_labels
+  global cluster_ram_size_summary
+  global cluster_ram_size_summary_ids
+
+  index_size_bins = [0, 1] + [int(x)*args.idxbucketsize for x in range(1,args.numidxbuckets)] + [np.inf]
+  index_size_labels = ["<"+ str(x)+"GB" for x in index_size_bins]
+  index_size_labels[0] = ">1MB"
+  index_size_labels[-2] = ">" + str(index_size_bins[-3]) + "GB"
+  idx_summary = [0] * len(index_size_bins) 
+  cluster_summary = [0] * len(index_size_bins)
+  cluster_ram_summary = [0] * len(index_size_bins)
+
+  cluster_size_bins = [0] + [int(x)*50 for x in range(1,20)] + [np.inf]
+  cluster_size_labels  = ["<"+ str(x)+"GB" for x in cluster_size_bins]
+  cluster_size_labels[-2] = ">" + str(cluster_size_bins[-3]) + "GB"
+  cluster_size_labels[0] = ">0GB"
+  cluster_size_summary = [0] * len(cluster_size_bins)
+
+  cluster_ram_size_bins = [0] + [int(x)*args.idxbucketsize for x in range(1,10)] + [np.inf]
+  cluster_ram_size_labels  = ["<"+ str(x)+"GB" for x in cluster_ram_size_bins]
+  cluster_ram_size_labels[-2] = ">" + str(cluster_ram_size_bins[-3]) + "GB"
+  cluster_ram_size_labels[0] = ">0GB"
+  cluster_ram_size_summary = [0] * len(cluster_ram_size_bins)
+  cluster_ram_size_summary_ids = [ [ ] for j in range(len(cluster_ram_size_bins))] 
 
   process(args.idxfile, args.ramfile)
   plot()
