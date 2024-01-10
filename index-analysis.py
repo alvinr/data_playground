@@ -54,16 +54,6 @@ def process(idxfile):
   largest_cluster_found=0
   max_ram_found=0
 
-  # File with cluster_ids and RAM
-#  with open(ramfile, newline='') as f:
-#    reader = csv.reader(f, delimiter='|', quotechar='"')
-#    next(reader, None)
-#    for row in reader:
-#      ram = 0
-#      if ( row[9] != '' ):
-#        ram = int(row[9]) / 1024**3
-#      cluster_details.append( { 'cluster_id': row[0], "ram_gb": ram } )
-
   # Raw index size file
   clusters_examined = 0
   no_indexes_reported = 0
@@ -198,7 +188,6 @@ def doit():
 
   parser=argparse.ArgumentParser()
   parser.add_argument("--idxfile", help="Like the file to load", default="cat_indices_output.txt")
-#  parser.add_argument("--ramfile", help="like the RAM sizes for the clusters", default="clusters.csv")
   parser.add_argument("--numidxbuckets", help="Number of Index Buckets", default=8, type=int)
   parser.add_argument("--idxbucketsize", help="Size of Index Buckets", default=30, type=int)
   args=parser.parse_args()
