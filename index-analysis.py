@@ -212,20 +212,21 @@ def doit():
   index_size_bins = [0, 1] + [int(x)*args.idxbucketsize for x in range(1,args.numidxbuckets)] + [np.inf]
   index_size_labels = [">"+ str(x)+"GB" for x in index_size_bins]
   index_size_labels[0] = ">1MB"
-  index_size_labels[-2] = ">" + str(index_size_bins[-3]) + "GB"
+  index_size_labels[-1] = ">" + str(index_size_bins[-2] + args.idxbucketsize) + "GB"
   idx_summary = [0] * len(index_size_bins) 
   cluster_summary = [0] * len(index_size_bins)
   cluster_ram_summary = [0] * len(index_size_bins)
 
-  cluster_size_bins = [0] + [int(x)*50 for x in range(1,20)] + [np.inf]
+  cluster_bucket_size = 50
+  cluster_size_bins = [0] + [int(x)*cluster_bucket_size for x in range(1,20)] + [np.inf]
   cluster_size_labels  = [">"+ str(x)+"GB" for x in cluster_size_bins]
-  cluster_size_labels[-2] = ">" + str(cluster_size_bins[-3]) + "GB"
+  cluster_size_labels[-1] = ">" + str(cluster_size_bins[-2] + cluster_bucket_size) + "GB"
   cluster_size_labels[0] = ">0GB"
   cluster_size_summary = [0] * len(cluster_size_bins)
 
   cluster_ram_size_bins = [0] + [int(x)*args.idxbucketsize for x in range(1,10)] + [np.inf]
   cluster_ram_size_labels  = [">"+ str(x)+"GB" for x in cluster_ram_size_bins]
-  cluster_ram_size_labels[-2] = ">" + str(cluster_ram_size_bins[-3]) + "GB"
+  cluster_ram_size_labels[-1] = ">" + str(cluster_ram_size_bins[-2] + args.idxbucketsize) + "GB"
   cluster_ram_size_labels[0] = ">0GB"
   cluster_ram_size_summary = [0] * len(cluster_ram_size_bins)
   cluster_ram_size_summary_ids = [ [ ] for j in range(len(cluster_ram_size_bins))] 
