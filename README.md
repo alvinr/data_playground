@@ -17,6 +17,18 @@ This script collects the index stats from a list of cluster ids. The cluser ids 
 ```
 ./get_cat_indices.sh <file with line delimiated cluster Ids>
 ```
+
+## para_cat.sh
+The script takes file of cluster ids, spilts the file into 10 segments and then runs get_cat_indices.sh in paralel
+
+### Pre-reqs
+None
+
+## Usage
+```
+./para_cat.sh <file with line delimiated cluster Ids>
+```
+
 ## index-analysis.py
 
 ### Pre-reqs
@@ -28,5 +40,5 @@ pip install -r requirement.txt
 
 ### Usage
 ```
-python index-analysis.py --idxfile <index stats from get_cat_indices.sh>  --ramfile <file with cluster memory usage>
+python index-analysis.py --idxfile <index stats from get_cat_indices.sh> 
 ```

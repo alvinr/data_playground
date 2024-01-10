@@ -15,8 +15,9 @@ cluster_ram_size_summary_ids = []
 
 ram_clusters_misses = 0
 
-def process(idxfile, ramfile):
+def process(idxfile):
   import csv
+  import sys
   import numpy as np
 
   def lookup(l, k, v, ret, default):
@@ -41,6 +42,8 @@ def process(idxfile, ramfile):
   def convert_to_bytes(size_list):
     byte_sizes = {'b': 1, 'kb': 1024, 'mb': 1024 ** 2, 'gb': 1024 ** 3, 'tb': 1024 ** 4}
     def parse_size(size_str):
+      if (len(size_str) == 0):
+        return 0
       num_index = len(size_str) - next((num_index for num_index, char in enumerate(size_str) if not (char.isdigit() or char == '.')), len(size_str))
       num, unit = float(size_str[:-num_index]), size_str[-num_index:].lower()
       return int(num * byte_sizes[unit])
@@ -49,26 +52,34 @@ def process(idxfile, ramfile):
   cluster_details = []
   max_index_size_found=0
   largest_cluster_found=0
+  max_ram_found=0
 
   # File with cluster_ids and RAM
-  with open(ramfile, newline='') as f:
-    reader = csv.reader(f, delimiter=',', quotechar='"')
-    next(reader, None)
-    for row in reader:
-      ram = 0
-      if ( row[9] != '' ):
-        ram = int(row[9]) / 1024**3
-      cluster_details.append( { 'cluster_id': row[0], "ram_gb": ram } )
+#  with open(ramfile, newline='') as f:
+#    reader = csv.reader(f, delimiter='|', quotechar='"')
+#    next(reader, None)
+#    for row in reader:
+#      ram = 0
+#      if ( row[9] != '' ):
+#        ram = int(row[9]) / 1024**3
+#      cluster_details.append( { 'cluster_id': row[0], "ram_gb": ram } )
 
   # Raw index size file
   clusters_examined = 0
   no_indexes_reported = 0
   no_indexes_over_1mb = 0
 
+  csv.field_size_limit(sys.maxsize)
   with open(idxfile, newline='') as f:
-    reader = csv.reader(f, delimiter=',', quotechar='"')
-    for row in reader:
-      idx_sizes = [x for x in row[1:] if x != '']
+    reader = csv.reader(f, delimiter='|', quotechar='"')
+    for cluster_id, nodes, indexes in reader:
+
+      cluster_ram = nodes.split(',')
+      cluster_ram = convert_to_bytes(cluster_ram)
+      cluster_ram = [i/(1024**3) for i in cluster_ram]
+      cluster_ram_total = sum(cluster_ram)
+
+      idx_sizes = indexes.split(',')
 
       if len(idx_sizes) == 0:
         no_indexes_reported += 1
@@ -89,16 +100,18 @@ def process(idxfile, ramfile):
 
       non_zero = [i for i, idx_size in enumerate(idx_counts) if idx_size != 0 ]
       cluster_summary[non_zero[-1]] += 1
-      cluster_ram_summary[non_zero[-1]] += lookup(cluster_details, "cluster_id", row[0], "ram_gb", 0)
+      cluster_ram_summary[non_zero[-1]] += cluster_ram_total
       cluster_total = sum(idx_sizes)
       update_hist([cluster_total], cluster_size_bins, cluster_size_summary)
-      bin = update_hist([lookup(cluster_details, "cluster_id", row[0], "ram_gb", 0)], cluster_ram_size_bins, cluster_ram_size_summary)
-      cluster_ram_size_summary_ids[bin].append(row[0])
+      bin = update_hist([cluster_ram_total], cluster_ram_size_bins, cluster_ram_size_summary)
+      cluster_ram_size_summary_ids[bin].append(cluster_id)
 
-      if max(idx_sizes) > max_index_size_found:
+      if ( max(idx_sizes) > max_index_size_found ):
         max_index_size_found = max(idx_sizes)
-      if cluster_total > largest_cluster_found:
+      if ( cluster_total > largest_cluster_found ):
         largest_cluster_found = cluster_total
+      if ( cluster_ram_total > max_ram_found ):
+        max_ram_found = cluster_ram_total
 
   print("=== Index Size Distributions")
   print(*index_size_labels[:-1], sep='\t')
@@ -123,7 +136,7 @@ def process(idxfile, ramfile):
   print("Clusters with no indexes over 1MB  %d" % no_indexes_over_1mb)
   print("Largest Cluster by Total Index Size %d (GB)" % largest_cluster_found)
   print("Largest Index %d (GB)" % max_index_size_found)
-  print("Largest Cluster by RAM %d (GB)" % max(cluster_details, key=lambda x:x['ram_gb'])["ram_gb"])
+  print("Largest Cluster by RAM %d (GB)" % max_ram_found)
   print("RAM clusters misses %d" % ram_clusters_misses)
 
 def plot():
@@ -185,7 +198,7 @@ def doit():
 
   parser=argparse.ArgumentParser()
   parser.add_argument("--idxfile", help="Like the file to load", default="cat_indices_output.txt")
-  parser.add_argument("--ramfile", help="like the RAM sizes for the clusters", default="clusters.csv")
+#  parser.add_argument("--ramfile", help="like the RAM sizes for the clusters", default="clusters.csv")
   parser.add_argument("--numidxbuckets", help="Number of Index Buckets", default=8, type=int)
   parser.add_argument("--idxbucketsize", help="Size of Index Buckets", default=30, type=int)
   args=parser.parse_args()
@@ -208,7 +221,7 @@ def doit():
   global cluster_ram_size_summary_ids
 
   index_size_bins = [0, 1] + [int(x)*args.idxbucketsize for x in range(1,args.numidxbuckets)] + [np.inf]
-  index_size_labels = ["<"+ str(x)+"GB" for x in index_size_bins]
+  index_size_labels = [">"+ str(x)+"GB" for x in index_size_bins]
   index_size_labels[0] = ">1MB"
   index_size_labels[-2] = ">" + str(index_size_bins[-3]) + "GB"
   idx_summary = [0] * len(index_size_bins) 
@@ -216,19 +229,19 @@ def doit():
   cluster_ram_summary = [0] * len(index_size_bins)
 
   cluster_size_bins = [0] + [int(x)*50 for x in range(1,20)] + [np.inf]
-  cluster_size_labels  = ["<"+ str(x)+"GB" for x in cluster_size_bins]
+  cluster_size_labels  = [">"+ str(x)+"GB" for x in cluster_size_bins]
   cluster_size_labels[-2] = ">" + str(cluster_size_bins[-3]) + "GB"
   cluster_size_labels[0] = ">0GB"
   cluster_size_summary = [0] * len(cluster_size_bins)
 
   cluster_ram_size_bins = [0] + [int(x)*args.idxbucketsize for x in range(1,10)] + [np.inf]
-  cluster_ram_size_labels  = ["<"+ str(x)+"GB" for x in cluster_ram_size_bins]
+  cluster_ram_size_labels  = [">"+ str(x)+"GB" for x in cluster_ram_size_bins]
   cluster_ram_size_labels[-2] = ">" + str(cluster_ram_size_bins[-3]) + "GB"
   cluster_ram_size_labels[0] = ">0GB"
   cluster_ram_size_summary = [0] * len(cluster_ram_size_bins)
   cluster_ram_size_summary_ids = [ [ ] for j in range(len(cluster_ram_size_bins))] 
 
-  process(args.idxfile, args.ramfile)
+  process(args.idxfile)
   plot()
 
 if __name__ == '__main__':
