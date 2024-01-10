@@ -30,6 +30,7 @@ None
 ```
 
 ## index-analysis.py
+This python script takes the output of `get_cat_indices.sh` and performs the analysis of the data nd generates a set of graphs for visualizations. Thsi script allows changes for the number and sizes of buckets from the command line.
 
 ### Pre-reqs
 
