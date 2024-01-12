@@ -15,10 +15,11 @@ cluster_ram_size_summary_ids = []
 
 ram_clusters_misses = 0
 
-def process(idxfile):
+def process(idxfile, version_match):
   import csv
   import sys
   import numpy as np
+  import re
 
   def lookup(l, k, v, ret, default):
     res = [x[ret] for x in l if x[k] == v]
@@ -49,6 +50,7 @@ def process(idxfile):
       return int(num * byte_sizes[unit])
     return [parse_size(i) for i in size_list ]
 
+  p = re.compile(version_match, re.IGNORECASE) 
   cluster_details = []
   max_index_size_found=0
   largest_cluster_found=0
@@ -58,11 +60,16 @@ def process(idxfile):
   clusters_examined = 0
   no_indexes_reported = 0
   no_indexes_over_1mb = 0
+  not_version_matched = 0
 
   csv.field_size_limit(sys.maxsize)
   with open(idxfile, newline='') as f:
     reader = csv.reader(f, delimiter='|', quotechar='"')
-    for cluster_id, nodes, indexes in reader:
+    for cluster_id, version, nodes, indexes in reader:
+
+      if ( p.match(version) == None ):
+        not_version_matched +=1
+        continue
 
       cluster_ram = nodes.split(',')
       cluster_ram = convert_to_bytes(cluster_ram)
@@ -109,7 +116,7 @@ def process(idxfile):
   print("=== Cluster Count by Max Index Size, Sum of RAM by max index size")
   print(*index_size_labels[:-1], sep='\t')
   print(*cluster_summary[:-1], sep='\t')
-  print(*cluster_ram_summary[:-1], sep='\t')
+  print(*[round(i) for i in cluster_ram_summary[:-1]], sep='\t')
   print("=== Cluster Index Total Size Distribution")
   print(*cluster_size_labels[:-1], sep='\t')
   print(*cluster_size_summary[:-1], sep='\t')
@@ -117,11 +124,12 @@ def process(idxfile):
   print(*cluster_ram_size_labels[:-1], sep='\t')
   print(*cluster_ram_size_summary[:-1], sep='\t')
   non_zero = [i for i, cluster_ids in enumerate(cluster_ram_size_summary_ids) if len(cluster_ids) != 0 ]
-  print("=== Largest Clusters by RAM %s" % cluster_ram_size_labels[non_zero[-2]])
+  print("=== Largest Clusters by RAM %s" % cluster_ram_size_labels[non_zero[-1]])
   print(cluster_ram_size_summary_ids[non_zero[-1]])
 
   print("=== Stats ")
   print("Clusters examined %d" % clusters_examined)
+  print("Not version matched with '%s' %d" % (version_match, not_version_matched))
   print("Clusters with no indexes %d" % no_indexes_reported)
   print("Clusters with no indexes over 1MB  %d" % no_indexes_over_1mb)
   print("Largest Cluster by Total Index Size %d (GB)" % largest_cluster_found)
@@ -190,6 +198,7 @@ def doit():
   parser.add_argument("--idxfile", help="Like the file to load", default="cat_indices_output.txt")
   parser.add_argument("--numidxbuckets", help="Number of Index Buckets", default=8, type=int)
   parser.add_argument("--idxbucketsize", help="Size of Index Buckets", default=30, type=int)
+  parser.add_argument("--version", help="Version to filter on", default="")
   args=parser.parse_args()
 
   import numpy as np
@@ -231,7 +240,7 @@ def doit():
   cluster_ram_size_summary = [0] * len(cluster_ram_size_bins)
   cluster_ram_size_summary_ids = [ [ ] for j in range(len(cluster_ram_size_bins))] 
 
-  process(args.idxfile)
+  process(args.idxfile, args.version)
   plot()
 
 if __name__ == '__main__':
