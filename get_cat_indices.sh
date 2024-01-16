@@ -11,22 +11,24 @@ if [ $# -eq 2 ]; then
   OUT=$2
 fi
 
+tmpjson=$(mktemp $FILE.XXXXXX.json)
+tmpout=$(mktemp $FILE.XXXXXX.txt)
+
 for i in $(cat $FILE | tr -d '"'); do
   echo "---"
   echo "Elasticsearch Cluster ID: [$i]"
-  tmpfile=$(mktemp /tmp/get_cat_indices.sh.XXXXXX.json)
-  printf '{"query":{"bool":{"must":[{"nested":{"path":"resources.elasticsearch","query":{"exists":{"field":"resources.elasticsearch.id"}}}}],"filter":[{"nested":{"path":"resources.elasticsearch","query":{"bool":{"minimum_should_match":1,"should":[{"prefix":{"resources.elasticsearch.id":{"value":"' > $tmpfile
-  printf $i >> $tmpfile
-  printf '"}}}]}}}}]}}}' >> $tmpfile
-  DEPLOYMENT_ID=$(ecl deployment search -f $tmpfile --format "{{.ID}}")
-  INDICES_INFO=$(ecl api -H "X-Management-Request: true" -X GET "v1/deployments/$DEPLOYMENT_ID/elasticsearch/main-elasticsearch/proxy/_cat/indices?h=pri.store.size")
-  INDICES=$(echo ${INDICES_INFO[0]})
-  NODE_RAM=$(ecl api -H "X-Management-Request: true" -X GET "v1/deployments/$DEPLOYMENT_ID/elasticsearch/main-elasticsearch/proxy/_cat/nodes?h=ram.max,node.role" | grep -e "h" -e "d" | cut -f 1 -d " ")
-  RAM=$(echo ${NODE_RAM[0]})
-  VERSION=$(ecl api -H "X-Management-Request: true" -X GET "v1/deployments/$DEPLOYMENT_ID/elasticsearch/main-elasticsearch/proxy/_cat/nodes?h=version" | uniq)
-  VERSION=$(echo ${VERSION[0]})
-  echo "$i|$VERSION|${RAM// /,}|${INDICES// /,}" >> $OUT
-#  SHARD_COUNT=$(ecl api -H "X-Management-Request: true" -X GET "v1/deployments/$DEPLOYMENT_ID/elasticsearch/main-elasticsearch/proxy/_cat/shards?h=shard" | sort | uniq | wc -l)
-#  echo "$i|$VERSION|$SHARD_COUNT|${RAM// /,}|${INDICES// /,}" >> $OUT
+  printf '{"query":{"bool":{"must":[{"nested":{"path":"resources.elasticsearch","query":{"exists":{"field":"resources.elasticsearch.id"}}}}],"filter":[{"nested":{"path":"resources.elasticsearch","query":{"bool":{"minimum_should_match":1,"should":[{"prefix":{"resources.elasticsearch.id":{"value":"' > $tmpjson
+  printf $i >> $tmpjson
+  printf '"}}}]}}}}]}}}' >> $tmpjson
+  DEPLOYMENT_ID=$(ecl deployment search -f $tmpjson --format "{{.ID}}")
+  INDEXES=$(ecl api -H "X-Management-Request: true" -X GET "v1/deployments/$DEPLOYMENT_ID/elasticsearch/main-elasticsearch/proxy/_cat/indices?pri=true&h=index,pri,pri.store.size&bytes=mb" | tr '\n' ';' | tr -s ' ' | tr ' ' ',')
+  RAM=$(ecl api -H 'X-Management-Request: true' -X GET "v1/deployments/$DEPLOYMENT_ID/elasticsearch/main-elasticsearch/proxy/_cat/nodes?h=ram.max,node.role&bytes=mb" | grep -e "h" -e "d" | cut -f 1 -d " " | tr -s " ")
+  RAM=$(echo ${RAM[0]})
+  VERSION=$(ecl api -H 'X-Management-Request: true' -X GET "v1/deployments/$DEPLOYMENT_ID/elasticsearch/main-elasticsearch/proxy/_cat/nodes?h=version" | head -1)
+  echo "$i|$VERSION|${RAM// /,}|$INDEXES" >> $tmpout
 done
+
+cat $tmpout >> $OUT
+rm $tmpfile
+rm $tmpout
 
