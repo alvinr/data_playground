@@ -13,24 +13,15 @@ cluster_ram_size_labels  = []
 cluster_ram_size_summary = []
 cluster_ram_size_summary_ids = []
 
-shard_dits = []
+shard_dist = []
+shard_dist_labels = []
 
-ram_clusters_misses = 0
 
 def process(idxfile, version_match):
   import csv
   import sys
   import numpy as np
   import re
-
-  def lookup(l, k, v, ret, default):
-    res = [x[ret] for x in l if x[k] == v]
-    if ( len(res) == 0 ):
-      global ram_clusters_misses
-      ram_clusters_misses += 1
-      return default
-    else:
-      return res[0]
 
   def update_hist(values, bins, hist):
     l = 0
@@ -97,6 +88,7 @@ def process(idxfile, version_match):
       k = [i for i in k if len(i) == 3]
       k = [l for l in [[j(k or 0) for j, k in zip(tp, i)] for i in k] if l[2] > 0]
 
+#      This is the above three lines in one line, harder to debug!
 #      k = [l for l in [l for l in [[j(k or 0) for j, k in zip(tp, i)] for i in [i.split(',') for i in indexes.split(';')[:-1]]] if len(l) == 3] if l[2] > 0 ]
 
       if len(k) == 0:
@@ -124,6 +116,10 @@ def process(idxfile, version_match):
       update_hist([cluster_total], cluster_size_bins, cluster_size_summary)
       bin = update_hist([cluster_ram_total], cluster_ram_size_bins, cluster_ram_size_summary)
       cluster_ram_size_summary_ids[bin].append(cluster_id)
+
+      for i in range(len(idx_shards)):
+        norm_i = min(idx_shards[i], len(shard_dist)-1)
+        update_hist([idx_sizes[i]], index_size_bins, shard_dist[norm_i])
 
       if ( max(idx_sizes) > max_index_size_found ):
         max_index_size_found = max(idx_sizes)
@@ -157,37 +153,68 @@ def process(idxfile, version_match):
   print("Largest Cluster by Total Index Size %d (GB)" % largest_cluster_found)
   print("Largest Index                       %d (GB)" % max_index_size_found)
   print("Largest Cluster by RAM              %d (GB)" % max_ram_found)
-  print("RAM clusters misses                 %d" % ram_clusters_misses)
   print("Percentage of Data Streams          %d PCT" % (( sum(idx_ds_summary) / ( sum(idx_ds_summary) + sum(idx_ri_summary)))*100) )
+  print(shard_dist)
 
 def plot():
   import pandas as pd
   import matplotlib.pyplot as plt
   import numpy as np
 
-  def calc_by_pct(source):
-    total=sum(source)
-    pct_of_total = [round(i/total*100, 2) for i in source]
-    return pct_of_total
-
-
-  def plot_pct_stacked(labels, values, value_names, title, xlabel, ylabel, color=['limegreen', 'orange']):
+  def plot_pct_pie(labels, values, value_names, title, xlabel, ylabel, color=['limegreen', 'orange'], colormap=''):
     cols = []
-    d = { 'X': labels[:-1] }
+    rot = 90
+    d = { 'X': labels }
     for i in range(len(values)):
       lbl = 'Y' + str(i)
       d[lbl] = values[i][:-1]
       cols.append(lbl)
 
-    df = pd.DataFrame(d,  index=labels[:-1])
-    df['Total'] = df[cols].sum(axis=1)
+    df = pd.DataFrame(d, index=labels)
     df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100)
-    ax = df.plot(kind='bar', stacked=True, figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, color=color, edgecolor='white', linewidth=1.75)
+    print(df)
+   
+    plot_cols = 3
+    plot_rows, rem = divmod(len(values), plot_cols)
+    plot_rows+= 1 if rem !=0 else 0
+
+    figure, axis = plt.subplots(nrows=plot_rows, ncols=plot_cols, figsize=( 4*plot_rows, 4*plot_cols))
+    figure.suptitle(title)
+
+    for i in range(len(values)):
+      df_slice = df[df.columns[i+1]]
+      use_row, use_col = divmod(i, plot_cols)
+      ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', title=value_names[i], figsize=(12,12), autopct='%1.0f%%', colormap='rainbow')
+      ax_slice.margins(x=2, y=2)
+    
+    return df
+
+
+  def plot_pct_stacked(labels, values, value_names, title, xlabel, ylabel, color=['limegreen', 'orange'], colormap='', transpose=False):
+    cols = []
+    rot = 90
+    d = { 'X': labels }
+    for i in range(len(values)):
+      lbl = 'Y' + str(i)
+      d[lbl] = values[i][:-1]
+      cols.append(lbl)
+
+    if len(values) > 5:
+      rot = 0
+
+    df = pd.DataFrame(d,  index=labels)
+    if transpose == True:
+      df = df.transpose()
+      cols = list(df.columns)
+      df.drop('X', inplace=True)
+    df['Total'] = df[cols].sum(axis=1)
+    df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100).round(2)
+    ax = df.plot(kind='bar', stacked=True, figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, colormap='rainbow', edgecolor='white', linewidth=1.75)
     for c in ax.containers:
       xlabels = [f'{w:.0f}%' if (w := v.get_height()) > 0 else '' for v in c ]
-      ax.bar_label(c, labels=xlabels, label_type='center', rotation=90, padding=5, fmt='{:,.0f}%')
+      ax.bar_label(c, labels=xlabels, label_type='center', rotation=rot, padding=5, fmt='{:,.0f}%')
     ax.bar_label(ax.containers[-1], labels=df['Total'], label_type='edge', rotation=45, padding=5)
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='best')
     ax.legend(value_names);
     ax.margins(y=0.1)
     
@@ -198,9 +225,6 @@ def plot():
     plot_vals = values
     secondary = False
 
-    if ( asPct == True ):
-      plot_vals = calc_by_pct(values)
-
     contents = { 'X': labels[:-1], 'left': plot_vals[:-1] }
 
     if ( runningTot == True ):
@@ -210,34 +234,50 @@ def plot():
       secondary = True
 
     df = pd.DataFrame(contents, index=labels[:-1])
-#    if ( asPct == True ):
-#      df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100)
+    if ( asPct == True ):
+      df['left'] = ((df['left'] / df['left'].sum()) * 100)
+
+    if ( runningTot == True ):
+      rt = np.cumsum(df['left'])     
+      df['right'] = rt
+      secondary = True
+    
 
     ax = df.plot(kind='bar', figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, color=color, edgecolor='white', linewidth=1.75)
     rot = 90
     if ( secondary != True ):
       rot = 45
-    ax.bar_label(ax.containers[0], label_type='edge', rotation=rot, padding=5)
+    fmt='{:,.0f}'
+    if ( asPct == True ):
+      fmt='{:,.1f}%'
+    ax.bar_label(ax.containers[0], label_type='edge', rotation=rot, padding=5, fmt=fmt)
     ax.set_xticklabels(df['X'], rotation=90, ha='right')
     ax.margins(y=0.1)
 
     if ( secondary == True ):
-      ax.bar_label(ax.containers[1], label_type='edge', rotation=45, padding=5, fmt='{:,.0f}%')
+      fmt='{:,.1f}%'
+      if ( runningTot == True ):
+        fmt='{:,.0f}%'
+      ax.bar_label(ax.containers[1], label_type='edge', rotation=90, padding=5, fmt=fmt)
 
     return df
 
   plot_hist(index_size_labels, idx_summary, 'Index Count Distribution by Index Size', 'Index Size (GB)', 'Index Count')
   plot_hist(index_size_labels, cluster_summary, 'Cluster Count by Max Index Size', 'Max Index Size (GB) in cluster', 'Cluster Count')
   plot_hist(cluster_size_labels, cluster_size_summary, 'Cluster Size Distribution', 'Cluster Size (TB)', 'Cluster Count')
-  plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster RAM Size Distribution', 'Cluster RAM Size (GB)', 'Cluster Count')
+  plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster Count by RAM Size Distribution', 'Cluster RAM Size (GB)', 'Cluster Count')
   plot_hist(index_size_labels, cluster_ram_summary, 'Cluster RAM total by Cluster Max Index Size', 'Max Index Size (GB) in cluster', 'RAM (GB)')
   plot_hist(index_size_labels, idx_summary, 'Index Size Distribution (as percentage) across all Clusters', 'Index Size (GB)', 'Percentage', True, color=['orange'])
-  plot_hist(index_size_labels, cluster_ram_summary, 'Cluster RAM Size Distribution (as percentage) by Largest Index in Cluster', 'Index Size (GB)', 'Percentage', True, True)
+  df = plot_hist(index_size_labels, cluster_ram_summary, 'Cluster RAM Size Distribution (as percentage) by Largest Index in Cluster', 'Index Size (GB)', 'Percentage', True, True)
   plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster Count (as percentage) by RAM Size', 'Cluster RAM Size (GB)', 'Percentage', True)
   plot_hist(index_size_labels, cluster_summary, 'Cluster Count Distribution (as percentage) by Cluster Max Index Size', 'Max Index Size (GB) in cluster', 'Percentage', True, 
             color=['green'])
-  plot_pct_stacked(index_size_labels, [idx_ds_summary, idx_ri_summary], ["Data Streams", "Regular Indexes"], "Data Streams vs. Regular Indexes by Index Size as Percentage (with counts)", 'Index Size (GB)', 'Percentage')
+  plot_pct_stacked(index_size_labels[:-1], [idx_ds_summary, idx_ri_summary], ["Data Streams", "Regular Indexes"], 
+                   "Data Streams vs. Regular Indexes by Index Size as Percentage (with counts)", 'Index Size (GB)', 'Percentage')
 
+#  df = plot_pct_stacked(index_size_labels[:-1], shard_dist[1:], shard_dist_labels, 
+#                   "Index Size by Shard Distribution", 'Shards', 'Percentage', transpose=False)
+  plot_pct_pie(index_size_labels[:-1], shard_dist[1:], shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage')
   plt.show()
 
 def doit():
@@ -248,7 +288,7 @@ def doit():
   parser.add_argument("--numidxbuckets", help="Number of Index Buckets", default=8, type=int)
   parser.add_argument("--idxbucketsize", help="Size of Index Buckets", default=30, type=int)
   parser.add_argument("--version", help="Version to filter on", default="")
-  parser.add_argument("--numshardbuckets", help="NUmber of Shard Buckets", default="10", type=int)
+  parser.add_argument("--numshardbuckets", help="NUmber of Shard Buckets", default=5, type=int)
   args=parser.parse_args()
 
   import numpy as np
@@ -269,6 +309,9 @@ def doit():
   global cluster_ram_size_labels
   global cluster_ram_size_summary
   global cluster_ram_size_summary_ids
+
+  global shard_dist
+  global shard_dist_labels
 
   index_size_bins = [0, 1] + [int(x)*args.idxbucketsize for x in range(1,args.numidxbuckets)] + [np.inf]
   index_size_labels = [">"+ str(x)+"GB" for x in index_size_bins]
@@ -294,7 +337,9 @@ def doit():
   cluster_ram_size_summary = [0] * len(cluster_ram_size_bins)
   cluster_ram_size_summary_ids = [ [ ] for j in range(len(cluster_ram_size_bins))] 
 
-  shard_dist = [ [ [ ] for j in range(len(index_size_bins)) ] for k in range(args.numshardbuckets) ]
+  shard_dist = [ [0 for y in range(len(index_size_bins))] for x in range(args.numshardbuckets+2) ]
+  shard_dist_labels = [str(i+1) for i in range(args.numshardbuckets+1)]
+  shard_dist_labels[-1] = ">" + str(shard_dist_labels[-2])
 
   process(args.idxfile, args.version)
   plot()
