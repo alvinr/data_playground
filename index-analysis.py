@@ -17,7 +17,7 @@ shard_dist = []
 shard_dist_labels = []
 
 
-def process(idxfile, version_match):
+def process(idxfile, version_match, idx_exclusion):
   import csv
   import sys
   import numpy as np
@@ -45,7 +45,7 @@ def process(idxfile, version_match):
       return int(num * byte_sizes[unit])
     return [parse_size(i) for i in size_list ]
 
-  p = re.compile(version_match, re.IGNORECASE) 
+  ver_match = re.compile(version_match, re.IGNORECASE) 
   cluster_details = []
   max_index_size_found=0
   largest_cluster_found=0
@@ -67,7 +67,7 @@ def process(idxfile, version_match):
     for cluster_id, version, nodes, indexes in reader:
 
       records_read += 1
-      if ( p.match(version) == None ):
+      if ( ver_match.match(version) == None ):
         not_version_matched +=1
         continue
 
@@ -86,6 +86,8 @@ def process(idxfile, version_match):
 	
       k = [i for i in [i.split(',') for i in indexes.split(';')[:-1]]]
       k = [i for i in k if len(i) == 3]
+      if idx_exclusion != "":
+        k = [v for i,v in enumerate(k) if ".ds" not in v[0]]
       k = [l for l in [[j(k or 0) for j, k in zip(tp, i)] for i in k] if l[2] > 0]
 
 #      This is the above three lines in one line, harder to debug!
@@ -146,6 +148,7 @@ def process(idxfile, version_match):
   print(cluster_ram_size_summary_ids[non_zero[-1]])
 
   print("=== Stats ")
+  print("Records examined                    %d" % records_read)
   print("Clusters examined                   %d" % clusters_examined)
   print("Not version matched with '%s'       %d" % (version_match, not_version_matched))
   print("Clusters with no indexes            %d" % no_indexes_reported)
@@ -154,38 +157,63 @@ def process(idxfile, version_match):
   print("Largest Index                       %d (GB)" % max_index_size_found)
   print("Largest Cluster by RAM              %d (GB)" % max_ram_found)
   print("Percentage of Data Streams          %d PCT" % (( sum(idx_ds_summary) / ( sum(idx_ds_summary) + sum(idx_ri_summary)))*100) )
-  print(shard_dist)
 
 def plot():
   import pandas as pd
   import matplotlib.pyplot as plt
   import numpy as np
 
-  def plot_pct_pie(labels, values, value_names, title, xlabel, ylabel, color=['limegreen', 'orange'], colormap=''):
+  def plot_pct_pie(labels, values, value_names, title, xlabel, ylabel, color=['limegreen', 'orange'], colormap='', transpose=False):
     cols = []
     rot = 90
-    d = { 'X': labels }
+    d = { }
     for i in range(len(values)):
-      lbl = 'Y' + str(i)
+      lbl = value_names[i]
       d[lbl] = values[i][:-1]
-      cols.append(lbl)
 
     df = pd.DataFrame(d, index=labels)
+    if transpose == True:
+      df = df.transpose()
+
+    print(sum(df.sum()))
+    # Exclude columns where all values are zero (to avoid div by zero errors)
+    non_zero_cols = (df != 0).any()
+    cols = non_zero_cols.index[non_zero_cols].tolist()
     df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100)
+    df = df.fillna(0)
     print(df)
-   
+
+    slice_labels = list(df.columns)
+    slices = (list(df.index))
+
     plot_cols = 3
-    plot_rows, rem = divmod(len(values), plot_cols)
+    plot_rows, rem = divmod(len(slices), plot_cols)
     plot_rows+= 1 if rem !=0 else 0
 
     figure, axis = plt.subplots(nrows=plot_rows, ncols=plot_cols, figsize=( 4*plot_rows, 4*plot_cols))
     figure.suptitle(title)
+    explode = [0.1] * len(slice_labels)
 
-    for i in range(len(values)):
-      df_slice = df[df.columns[i+1]]
+    for i in range(len(slices)):
+      df_slice = df.loc[slices[i]]
       use_row, use_col = divmod(i, plot_cols)
-      ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', title=value_names[i], figsize=(12,12), autopct='%1.0f%%', colormap='rainbow')
-      ax_slice.margins(x=2, y=2)
+      ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', title=slices[i], figsize=(12,12), autopct='%1.0f%%', colormap='rainbow', explode=explode)
+      ax_slice.margins(x=0.2, y=0.2)
+
+#    if includeTable == True:
+#       figure, ax_table = plt.subplots()
+#       ax_table.axis('off')
+#       ax_table.table(cellText=df.values, colLabels=df.keys(), loc='center', fontsize = 12)
+#      ax_table.set_fontsize(14)
+#       table = pd.plotting.table(ax_table, df, loc='center', cellLoc='center', )
+#       fig, ax = plt.subplots()
+#       fig.patch.set_visible(False)
+#       ax.axis('off')
+#       ax.axis('tight')
+#       table = ax.table(cellText=df.values, colLabels=df.columns, loc='center')
+#       table.set_fontsize(14)
+#       table.scale(1,4)
+#       fig.tight_layout()
     
     return df
 
@@ -209,7 +237,7 @@ def plot():
       df.drop('X', inplace=True)
     df['Total'] = df[cols].sum(axis=1)
     df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100).round(2)
-    ax = df.plot(kind='bar', stacked=True, figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, colormap='rainbow', edgecolor='white', linewidth=1.75)
+    ax = df.plot(kind='bar', stacked=True, figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, color=color, edgecolor='white', linewidth=1.75)
     for c in ax.containers:
       xlabels = [f'{w:.0f}%' if (w := v.get_height()) > 0 else '' for v in c ]
       ax.bar_label(c, labels=xlabels, label_type='center', rotation=rot, padding=5, fmt='{:,.0f}%')
@@ -275,20 +303,26 @@ def plot():
   plot_pct_stacked(index_size_labels[:-1], [idx_ds_summary, idx_ri_summary], ["Data Streams", "Regular Indexes"], 
                    "Data Streams vs. Regular Indexes by Index Size as Percentage (with counts)", 'Index Size (GB)', 'Percentage')
 
-#  df = plot_pct_stacked(index_size_labels[:-1], shard_dist[1:], shard_dist_labels, 
-#                   "Index Size by Shard Distribution", 'Shards', 'Percentage', transpose=False)
-  plot_pct_pie(index_size_labels[:-1], shard_dist[1:], shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage')
+  df = plot_pct_pie(index_size_labels[:-1], shard_dist[1:], shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage')
+  df = plot_pct_pie(index_size_labels[:-1], shard_dist[1:], shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage', transpose=True)
   plt.show()
 
 def doit():
   import argparse
 
+  class LoadFromFile (argparse.Action):
+    def __call__ (self, parser, namespace, values, option_string = None):
+        with values as f:
+            parser.parse_args(f.read().split(), namespace)  
+
   parser=argparse.ArgumentParser()
+  parser.add_argument('--conf', type=open, action=LoadFromFile)
   parser.add_argument("--idxfile", help="Like the file to load", default="cat_indices_output.txt")
   parser.add_argument("--numidxbuckets", help="Number of Index Buckets", default=8, type=int)
   parser.add_argument("--idxbucketsize", help="Size of Index Buckets", default=30, type=int)
-  parser.add_argument("--version", help="Version to filter on", default="")
   parser.add_argument("--numshardbuckets", help="NUmber of Shard Buckets", default=5, type=int)
+  parser.add_argument("--version", help="Version to filter on", default="")
+  parser.add_argument("--exclude_idx_match", help="Version to filter on", default="")
   args=parser.parse_args()
 
   import numpy as np
@@ -341,7 +375,7 @@ def doit():
   shard_dist_labels = [str(i+1) for i in range(args.numshardbuckets+1)]
   shard_dist_labels[-1] = ">" + str(shard_dist_labels[-2])
 
-  process(args.idxfile, args.version)
+  process(args.idxfile, args.version, args.exclude_idx_match)
   plot()
 
 if __name__ == '__main__':

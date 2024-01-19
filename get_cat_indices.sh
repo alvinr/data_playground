@@ -29,6 +29,4 @@ for i in $(cat $FILE | tr -d '"'); do
 done
 
 cat $tmpout >> $OUT
-rm $tmpfile
-rm $tmpout
 
