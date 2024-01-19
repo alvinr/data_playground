@@ -191,30 +191,26 @@ def plot():
     plot_rows+= 1 if rem !=0 else 0
 
     figure, axis = plt.subplots(nrows=plot_rows, ncols=plot_cols, figsize=( 4*plot_rows, 4*plot_cols))
+    for i in range(plot_rows):
+      for j in range(plot_cols):
+        axis[i, j].axis('off')  
+
     figure.suptitle(title)
-    explode = [0.1] * len(slice_labels)
 
     for i in range(len(slices)):
-      df_slice = df.loc[slices[i]]
       use_row, use_col = divmod(i, plot_cols)
-      ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', title=slices[i], figsize=(12,12), autopct='%1.0f%%', colormap='rainbow', explode=explode)
+      df_slice = df.loc[slices[i]]
+      if sum(df_slice) < 1:
+        continue
+      zero_rows = (df_slice < 1)
+      rm_rows = zero_rows.index[zero_rows].tolist()
+      for j in range(len(rm_rows)):
+        df_slice = df_slice.drop(rm_rows[j], axis=0)
+      explode = list([0.1 * i for i in range(len(list(df_slice.index)))])
+      ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', title=slices[i], figsize=(12,12), autopct='%1.0f%%', colormap='rainbow', explode=explode,
+                                startangle=180)
       ax_slice.margins(x=0.2, y=0.2)
-
-#    if includeTable == True:
-#       figure, ax_table = plt.subplots()
-#       ax_table.axis('off')
-#       ax_table.table(cellText=df.values, colLabels=df.keys(), loc='center', fontsize = 12)
-#      ax_table.set_fontsize(14)
-#       table = pd.plotting.table(ax_table, df, loc='center', cellLoc='center', )
-#       fig, ax = plt.subplots()
-#       fig.patch.set_visible(False)
-#       ax.axis('off')
-#       ax.axis('tight')
-#       table = ax.table(cellText=df.values, colLabels=df.columns, loc='center')
-#       table.set_fontsize(14)
-#       table.scale(1,4)
-#       fig.tight_layout()
-    
+      
     return df
 
 
