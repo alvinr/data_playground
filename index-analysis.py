@@ -206,7 +206,7 @@ def plot():
       rm_rows = zero_rows.index[zero_rows].tolist()
       for j in range(len(rm_rows)):
         df_slice = df_slice.drop(rm_rows[j], axis=0)
-      explode = list([0.1 * i for i in range(len(list(df_slice.index)))])
+      explode = list([0.1 + (i/20) for i in range(len(list(df_slice.index)))])
       ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', figsize=(12,12), autopct='%1.0f%%', colormap='Paired', 
                                 explode=explode, startangle=270, rotatelabels=True)
       ax_slice.set_title(slices[i], loc='left', pad=5)
