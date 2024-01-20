@@ -207,9 +207,10 @@ def plot():
       for j in range(len(rm_rows)):
         df_slice = df_slice.drop(rm_rows[j], axis=0)
       explode = list([0.1 * i for i in range(len(list(df_slice.index)))])
-      ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', title=slices[i], figsize=(12,12), autopct='%1.0f%%', colormap='rainbow', explode=explode,
-                                startangle=180)
-      ax_slice.margins(x=0.2, y=0.2)
+      ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', figsize=(12,12), autopct='%1.0f%%', colormap='Paired', 
+                                explode=explode, startangle=270, rotatelabels=True)
+      ax_slice.set_title(slices[i], loc='left', pad=5)
+      ax_slice.margins(x=5, y=5)
       
     return df
 
