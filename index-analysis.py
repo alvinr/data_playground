@@ -11,19 +11,29 @@ cluster_size_summary = []
 cluster_ram_size_bins = []
 cluster_ram_size_labels  = []
 cluster_ram_size_summary = []
-cluster_ram_size_summary_ids = []
 
 shard_dist = []
 shard_dist_labels = []
+shard_size_dist = []
 
 
-def process(idxfile, version_match, idx_exclusion):
+def process(args):
   import csv
   import sys
   import numpy as np
   import re
 
-  def update_hist(values, bins, hist):
+  def update_hist(values, bucket_size, hist, countOnly=True):
+    max_cols = len(hist)-1
+    for i in range(len(values)):
+      bucket, rem = divmod(values[i], bucket_size)
+      bucket = int(min(bucket, max_cols))
+      if (countOnly == True):
+        hist[bucket] += 1
+      else:
+        hist[bucket] += values[i]
+
+  def update_hist_old(values, bins, hist):
     l = 0
     for i in range(len(values)):
       for j in range(len(bins)):
@@ -35,21 +45,22 @@ def process(idxfile, version_match, idx_exclusion):
           break
     return l
 
-  def convert_to_bytes(size_list):
-    byte_sizes = {'b': 1, 'kb': 1024, 'mb': 1024 ** 2, 'gb': 1024 ** 3, 'tb': 1024 ** 4}
-    def parse_size(size_str):
-      if (len(size_str) == 0):
-        return 0
-      num_index = len(size_str) - next((num_index for num_index, char in enumerate(size_str) if not (char.isdigit() or char == '.')), len(size_str))
-      num, unit = float(size_str[:-num_index]), size_str[-num_index:].lower()
-      return int(num * byte_sizes[unit])
-    return [parse_size(i) for i in size_list ]
+  # def convert_to_bytes(size_list):
+  #   byte_sizes = {'b': 1, 'kb': 1024, 'mb': 1024 ** 2, 'gb': 1024 ** 3, 'tb': 1024 ** 4}
+  #   def parse_size(size_str):
+  #     if (len(size_str) == 0):
+  #       return 0
+  #     num_index = len(size_str) - next((num_index for num_index, char in enumerate(size_str) if not (char.isdigit() or char == '.')), len(size_str))
+  #     num, unit = float(size_str[:-num_index]), size_str[-num_index:].lower()
+  #     return int(num * byte_sizes[unit])
+  #   return [parse_size(i) for i in size_list ]
 
-  ver_match = re.compile(version_match, re.IGNORECASE) 
+  ver_match = re.compile(args.version, re.IGNORECASE)
   cluster_details = []
   max_index_size_found=0
   largest_cluster_found=0
   max_ram_found=0
+  largest_number_of_shards=0
 
   # Raw index size file
   clusters_examined = 0
@@ -62,7 +73,7 @@ def process(idxfile, version_match, idx_exclusion):
   csv.field_size_limit(sys.maxsize)
   records_read = 0
 
-  with open(idxfile, newline='') as f:
+  with open(args.idxfile, newline='') as f:
     reader = csv.reader(f, delimiter='|', quotechar='"')
     for cluster_id, version, nodes, indexes in reader:
 
@@ -79,14 +90,14 @@ def process(idxfile, version_match, idx_exclusion):
 
       # Take a string of [[index name, shard count, size];] (e.g. 'metrics-endpoint.metadata_current_default,1,225)' and
       # create three lists of index name, shard count, index size
-      
+
       if ( len(indexes) == 0 ):
         no_indexes_reported += 1
         continue
-	
+
       k = [i for i in [i.split(',') for i in indexes.split(';')[:-1]]]
       k = [i for i in k if len(i) == 3]
-      if idx_exclusion != "":
+      if args.exclude_idx_match != "":
         k = [v for i,v in enumerate(k) if ".ds" not in v[0]]
       k = [l for l in [[j(k or 0) for j, k in zip(tp, i)] for i in k] if l[2] > 0]
 
@@ -99,29 +110,30 @@ def process(idxfile, version_match, idx_exclusion):
 
       idx_names, idx_shards, idx_sizes =  [list(i) for i in zip(*k)]
       idx_sizes = [i/(1024) for i in idx_sizes]
- 
+
       clusters_examined += 1
       idx_counts = [0] * len(index_size_bins)
-      update_hist(idx_sizes, index_size_bins, idx_counts)
+      update_hist(idx_sizes, args.idxbucketsize, idx_counts)
       global idx_summary
       idx_summary = np.add(idx_counts, idx_summary)
 
       idx_ds_sizes = [idx_sizes[i] for i,v in enumerate(idx_names) if ".ds" in v]
       idx_ri_sizes = [idx_sizes[i] for i,v in enumerate(idx_names) if ".ds" not in v]
-      update_hist(idx_ds_sizes, index_size_bins, idx_ds_summary)
-      update_hist(idx_ri_sizes, index_size_bins, idx_ri_summary)
+      update_hist(idx_ds_sizes, args.idxbucketsize, idx_ds_summary)
+      update_hist(idx_ri_sizes, args.idxbucketsize, idx_ri_summary)
 
       non_zero = [i for i, idx_size in enumerate(idx_counts) if idx_size != 0 ]
       cluster_summary[non_zero[-1]] += 1
       cluster_ram_summary[non_zero[-1]] += cluster_ram_total
       cluster_total = sum(idx_sizes)
-      update_hist([cluster_total], cluster_size_bins, cluster_size_summary)
-      bin = update_hist([cluster_ram_total], cluster_ram_size_bins, cluster_ram_size_summary)
-      cluster_ram_size_summary_ids[bin].append(cluster_id)
+      update_hist([cluster_total], args.clusterbucketsize, cluster_size_summary)
+      update_hist([cluster_ram_total], args.idxbucketsize, cluster_ram_size_summary)
+      update_hist([cluster_ram_total], args.idxbucketsize, cluster_ram_size_summary)
 
       for i in range(len(idx_shards)):
-        norm_i = min(idx_shards[i], len(shard_dist)-1)
-        update_hist([idx_sizes[i]], index_size_bins, shard_dist[norm_i])
+        norm_i = min(idx_shards[i], len(shard_dist))-1
+        update_hist([idx_sizes[i]], args.idxbucketsize, shard_dist[norm_i])
+        update_hist([round(idx_sizes[i])], args.idxbucketsize, shard_size_dist[norm_i], countOnly=False)
 
       if ( max(idx_sizes) > max_index_size_found ):
         max_index_size_found = max(idx_sizes)
@@ -129,34 +141,43 @@ def process(idxfile, version_match, idx_exclusion):
         largest_cluster_found = cluster_total
       if ( cluster_ram_total > max_ram_found ):
         max_ram_found = cluster_ram_total
+      if ( max(idx_shards) > largest_number_of_shards):
+        largest_number_of_shards = max(idx_shards)
+
 
   print("=== Index Size Distributions")
-  print(*index_size_labels[:-1], sep='\t')
-  print(*idx_summary[:-1], sep='\t')
+  print(*index_size_labels, sep='\t')
+  print(*idx_summary, sep='\t')
   print("=== Cluster Count by Max Index Size, Sum of RAM by max index size")
-  print(*index_size_labels[:-1], sep='\t')
-  print(*cluster_summary[:-1], sep='\t')
-  print(*[round(i) for i in cluster_ram_summary[:-1]], sep='\t')
+  print(*index_size_labels, sep='\t')
+  print(*cluster_summary, sep='\t')
+  print(*[round(i) for i in cluster_ram_summary], sep='\t')
   print("=== Cluster Index Total Size Distribution")
-  print(*cluster_size_labels[:-1], sep='\t')
-  print(*cluster_size_summary[:-1], sep='\t')
+  print(*cluster_size_labels, sep='\t')
+  print(*cluster_size_summary, sep='\t')
   print("=== Cluster RAM Total Size Distribution")
-  print(*cluster_ram_size_labels[:-1], sep='\t')
-  print(*cluster_ram_size_summary[:-1], sep='\t')
-  non_zero = [i for i, cluster_ids in enumerate(cluster_ram_size_summary_ids) if len(cluster_ids) != 0 ]
-  print("=== Largest Clusters by RAM %s" % cluster_ram_size_labels[non_zero[-1]])
-  print(cluster_ram_size_summary_ids[non_zero[-1]])
+  print(*cluster_ram_size_labels, sep='\t')
+  print(*cluster_ram_size_summary, sep='\t')
+  print("=== Cluster Count by Max Index Size by Shard")
+  print(*list(["Shard"] + index_size_labels), sep='\t')
+  [ print(*[shard_dist_labels[i], *v], sep='\t') for i,v in enumerate(shard_dist) ]
+  print("=== Total Index size by Index Bucket by Shard (GB)")
+  print(*list(["Shard"] + index_size_labels), sep='\t')
+  [ print(*[shard_dist_labels[i], *v], sep='\t') for i,v in enumerate(shard_size_dist) ]
+
 
   print("=== Stats ")
   print("Records examined                    %d" % records_read)
   print("Clusters examined                   %d" % clusters_examined)
-  print("Not version matched with '%s'       %d" % (version_match, not_version_matched))
+  print("Not version matched with '%s'       %d" % (args.version, not_version_matched))
   print("Clusters with no indexes            %d" % no_indexes_reported)
   print("Clusters with no indexes over 1MB   %d" % no_indexes_over_1mb)
   print("Largest Cluster by Total Index Size %d (GB)" % largest_cluster_found)
   print("Largest Index                       %d (GB)" % max_index_size_found)
   print("Largest Cluster by RAM              %d (GB)" % max_ram_found)
   print("Percentage of Data Streams          %d PCT" % (( sum(idx_ds_summary) / ( sum(idx_ds_summary) + sum(idx_ri_summary)))*100) )
+  print("Largest number of shards            %d" % largest_number_of_shards)
+
 
 def plot():
   import pandas as pd
@@ -169,19 +190,17 @@ def plot():
     d = { }
     for i in range(len(values)):
       lbl = value_names[i]
-      d[lbl] = values[i][:-1]
+      d[lbl] = values[i]
 
     df = pd.DataFrame(d, index=labels)
     if transpose == True:
       df = df.transpose()
 
-    print(sum(df.sum()))
     # Exclude columns where all values are zero (to avoid div by zero errors)
     non_zero_cols = (df != 0).any()
     cols = non_zero_cols.index[non_zero_cols].tolist()
     df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100)
     df = df.fillna(0)
-    print(df)
 
     slice_labels = list(df.columns)
     slices = (list(df.index))
@@ -193,10 +212,9 @@ def plot():
     figure, axis = plt.subplots(nrows=plot_rows, ncols=plot_cols, figsize=( 4*plot_rows, 4*plot_cols))
     for i in range(plot_rows):
       for j in range(plot_cols):
-        axis[i, j].axis('off')  
+        axis[i, j].axis('off')
 
     figure.suptitle(title)
-
     for i in range(len(slices)):
       use_row, use_col = divmod(i, plot_cols)
       df_slice = df.loc[slices[i]]
@@ -207,11 +225,11 @@ def plot():
       for j in range(len(rm_rows)):
         df_slice = df_slice.drop(rm_rows[j], axis=0)
       explode = list([0.1 + (i/20) for i in range(len(list(df_slice.index)))])
-      ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', figsize=(12,12), autopct='%1.0f%%', colormap='Paired', 
+      ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', figsize=(12,12), autopct='%1.0f%%', colormap='Paired',
                                 explode=explode, startangle=270, rotatelabels=True)
       ax_slice.set_title(slices[i], loc='left', pad=5)
       ax_slice.margins(x=5, y=5)
-      
+
     return df
 
 
@@ -221,7 +239,7 @@ def plot():
     d = { 'X': labels }
     for i in range(len(values)):
       lbl = 'Y' + str(i)
-      d[lbl] = values[i][:-1]
+      d[lbl] = values[i]
       cols.append(lbl)
 
     if len(values) > 5:
@@ -242,7 +260,7 @@ def plot():
     ax.legend(bbox_to_anchor=(1.05, 1), loc='best')
     ax.legend(value_names);
     ax.margins(y=0.1)
-    
+
     return df
 
   def plot_hist(labels, values, title, xlabel, ylabel, asPct=False, runningTot=False, color=['blue', 'orange']):
@@ -253,7 +271,7 @@ def plot():
     contents = { 'X': labels[:-1], 'left': plot_vals[:-1] }
 
     if ( runningTot == True ):
-      rt = np.cumsum(plot_vals)     
+      rt = np.cumsum(plot_vals)
       contents.update({ 'right': rt[:-1] })
       cols.append('right')
       secondary = True
@@ -263,10 +281,10 @@ def plot():
       df['left'] = ((df['left'] / df['left'].sum()) * 100)
 
     if ( runningTot == True ):
-      rt = np.cumsum(df['left'])     
+      rt = np.cumsum(df['left'])
       df['right'] = rt
       secondary = True
-    
+
 
     ax = df.plot(kind='bar', figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, color=color, edgecolor='white', linewidth=1.75)
     rot = 90
@@ -295,13 +313,14 @@ def plot():
   plot_hist(index_size_labels, idx_summary, 'Index Size Distribution (as percentage) across all Clusters', 'Index Size (GB)', 'Percentage', True, color=['orange'])
   df = plot_hist(index_size_labels, cluster_ram_summary, 'Cluster RAM Size Distribution (as percentage) by Largest Index in Cluster', 'Index Size (GB)', 'Percentage', True, True)
   plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster Count (as percentage) by RAM Size', 'Cluster RAM Size (GB)', 'Percentage', True)
-  plot_hist(index_size_labels, cluster_summary, 'Cluster Count Distribution (as percentage) by Cluster Max Index Size', 'Max Index Size (GB) in cluster', 'Percentage', True, 
+  plot_hist(index_size_labels, cluster_summary, 'Cluster Count Distribution (as percentage) by Cluster Max Index Size', 'Max Index Size (GB) in cluster', 'Percentage', True,
             color=['green'])
-  plot_pct_stacked(index_size_labels[:-1], [idx_ds_summary, idx_ri_summary], ["Data Streams", "Regular Indexes"], 
+  plot_pct_stacked(index_size_labels, [idx_ds_summary, idx_ri_summary], ["Data Streams", "Regular Indexes"],
                    "Data Streams vs. Regular Indexes by Index Size as Percentage (with counts)", 'Index Size (GB)', 'Percentage')
 
-  df = plot_pct_pie(index_size_labels[:-1], shard_dist[1:], shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage')
-  df = plot_pct_pie(index_size_labels[:-1], shard_dist[1:], shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage', transpose=True)
+  plot_pct_pie(index_size_labels, shard_dist, shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage')
+  plot_pct_pie(index_size_labels, shard_dist, shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage', transpose=True)
+  plot_pct_pie(index_size_labels, shard_size_dist, shard_dist_labels, "Accumulated Indexs by Index Bucket by Shard", 'Shards', 'Percentage', transpose=True)
   plt.show()
 
 def doit():
@@ -310,21 +329,23 @@ def doit():
   class LoadFromFile (argparse.Action):
     def __call__ (self, parser, namespace, values, option_string = None):
         with values as f:
-            parser.parse_args(f.read().split(), namespace)  
+            parser.parse_args(f.read().split(), namespace)
 
   parser=argparse.ArgumentParser()
   parser.add_argument('--conf', type=open, action=LoadFromFile)
   parser.add_argument("--idxfile", help="Like the file to load", default="cat_indices_output.txt")
   parser.add_argument("--numidxbuckets", help="Number of Index Buckets", default=8, type=int)
-  parser.add_argument("--idxbucketsize", help="Size of Index Buckets", default=30, type=int)
-  parser.add_argument("--numshardbuckets", help="NUmber of Shard Buckets", default=5, type=int)
+  parser.add_argument("--idxbucketsize", help="Size of Index Buckets (in GB)", default=30, type=int)
+  parser.add_argument("--numshardbuckets", help="Number of Shard Buckets", default=5, type=int)
+  parser.add_argument("--clusterbucketsize", help="Size of Cluster RAM Buckets (in GB)", default=64, type=int)
+  parser.add_argument("--numclusterbuckets", help="Number of Cluster RAM Buckets", default=8, type=int)
   parser.add_argument("--version", help="Version to filter on", default="")
-  parser.add_argument("--exclude_idx_match", help="Version to filter on", default="")
+  parser.add_argument("--exclude_idx_match", help="Index names to filter out", default="")
   args=parser.parse_args()
 
   import numpy as np
 
-  global index_size_bins 
+  global index_size_bins
   global index_size_labels
   global idx_summary
   global idx_ds_summary
@@ -339,40 +360,40 @@ def doit():
   global cluster_ram_size_bins
   global cluster_ram_size_labels
   global cluster_ram_size_summary
-  global cluster_ram_size_summary_ids
 
   global shard_dist
   global shard_dist_labels
+  global shard_size_dist
 
-  index_size_bins = [0, 1] + [int(x)*args.idxbucketsize for x in range(1,args.numidxbuckets)] + [np.inf]
+  index_size_bins = [int(x)*args.idxbucketsize for x in range(0,args.numidxbuckets+1)]
   index_size_labels = [">"+ str(x)+"GB" for x in index_size_bins]
   index_size_labels[0] = ">1MB"
-  index_size_labels[-1] = ">" + str(index_size_bins[-2] + args.idxbucketsize) + "GB"
-  idx_summary = [0] * len(index_size_bins) 
+  # index_size_labels[-1] = ">" + str(index_size_bins[-2] + args.idxbucketsize) + "GB"
+  idx_summary = [0] * len(index_size_bins)
   idx_ds_summary = [0] * len(index_size_bins)
   idx_ri_summary = [0] * len(index_size_bins)
   cluster_summary = [0] * len(index_size_bins)
   cluster_ram_summary = [0] * len(index_size_bins)
 
-  cluster_bucket_size = 50
-  cluster_size_bins = [0] + [int(x)*cluster_bucket_size for x in range(1,20)] + [np.inf]
+  cluster_bucket_size = 64
+  cluster_size_bins = [int(x)*args.clusterbucketsize for x in range(0, args.numclusterbuckets+1)]
   cluster_size_labels  = [">"+ str(x)+"GB" for x in cluster_size_bins]
-  cluster_size_labels[-1] = ">" + str(cluster_size_bins[-2] + cluster_bucket_size) + "GB"
+  # cluster_size_labels[-1] = ">" + str(cluster_size_bins[-2] + cluster_bucket_size) + "GB"
   cluster_size_labels[0] = ">0GB"
   cluster_size_summary = [0] * len(cluster_size_bins)
 
-  cluster_ram_size_bins = [0] + [int(x)*args.idxbucketsize for x in range(1,10)] + [np.inf]
+  cluster_ram_size_bins = [int(x)*args.idxbucketsize for x in range(0,args.numclusterbuckets+1)]
   cluster_ram_size_labels  = [">"+ str(x)+"GB" for x in cluster_ram_size_bins]
-  cluster_ram_size_labels[-1] = ">" + str(cluster_ram_size_bins[-2] + args.idxbucketsize) + "GB"
+  # cluster_ram_size_labels[-1] = ">" + str(cluster_ram_size_bins[-2] + args.idxbucketsize) + "GB"
   cluster_ram_size_labels[0] = ">0GB"
   cluster_ram_size_summary = [0] * len(cluster_ram_size_bins)
-  cluster_ram_size_summary_ids = [ [ ] for j in range(len(cluster_ram_size_bins))] 
 
-  shard_dist = [ [0 for y in range(len(index_size_bins))] for x in range(args.numshardbuckets+2) ]
-  shard_dist_labels = [str(i+1) for i in range(args.numshardbuckets+1)]
+  shard_dist = [ [0 for y in range(len(index_size_bins))] for x in range(0, args.numshardbuckets+1) ]
+  shard_dist_labels = [str(i+1) for i in range(0, args.numshardbuckets+1)]
   shard_dist_labels[-1] = ">" + str(shard_dist_labels[-2])
+  shard_size_dist = [ [0 for y in range(len(index_size_bins))] for x in range(0, args.numshardbuckets+1) ]
 
-  process(args.idxfile, args.version, args.exclude_idx_match)
+  process(args)
   plot()
 
 if __name__ == '__main__':

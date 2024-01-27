@@ -1,0 +1,9 @@
+nothing|||
+no-version||8192|.ds-elastic-cloud-logs-8-2024.01.11-000002,1,20572;
+no-ram|8.9.0||.ds-elastic-cloud-logs-8-2024.01.11-000002,1,20572;
+no-indexes|8.9.0|8192|
+no-index-name|8.9.0|8192|,1,20572;
+no-index-shards|8.9.0|8192|.ds-elastic-cloud-logs-8-2024.01.11-000002,,20572;
+no-index-size|8.9.0|8192|.ds-elastic-cloud-logs-8-2024.01.11-000002,1,;
+no-index-indexes|8.9.0|8192|;
+no-version||8192|.ds-elastic-cloud-logs-8-2024.01.11-000002,1,20572;
