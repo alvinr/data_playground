@@ -33,28 +33,6 @@ def process(args):
       else:
         hist[bucket] += values[i]
 
-  def update_hist_old(values, bins, hist):
-    l = 0
-    for i in range(len(values)):
-      for j in range(len(bins)):
-        if values[i] > bins[j]:
-          continue
-        else:
-          hist[j-1] += 1
-          l = j
-          break
-    return l
-
-  # def convert_to_bytes(size_list):
-  #   byte_sizes = {'b': 1, 'kb': 1024, 'mb': 1024 ** 2, 'gb': 1024 ** 3, 'tb': 1024 ** 4}
-  #   def parse_size(size_str):
-  #     if (len(size_str) == 0):
-  #       return 0
-  #     num_index = len(size_str) - next((num_index for num_index, char in enumerate(size_str) if not (char.isdigit() or char == '.')), len(size_str))
-  #     num, unit = float(size_str[:-num_index]), size_str[-num_index:].lower()
-  #     return int(num * byte_sizes[unit])
-  #   return [parse_size(i) for i in size_list ]
-
   ver_match = re.compile(args.version, re.IGNORECASE)
   cluster_details = []
   max_index_size_found=0
@@ -236,7 +214,7 @@ def plot():
   def plot_pct_stacked(labels, values, value_names, title, xlabel, ylabel, color=['limegreen', 'orange'], colormap='', transpose=False):
     cols = []
     rot = 90
-    d = { 'X': labels }
+    d = {}
     for i in range(len(values)):
       lbl = 'Y' + str(i)
       d[lbl] = values[i]
@@ -249,7 +227,6 @@ def plot():
     if transpose == True:
       df = df.transpose()
       cols = list(df.columns)
-      df.drop('X', inplace=True)
     df['Total'] = df[cols].sum(axis=1)
     df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100).round(2)
     ax = df.plot(kind='bar', stacked=True, figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, color=color, edgecolor='white', linewidth=1.75)
@@ -268,23 +245,17 @@ def plot():
     plot_vals = values
     secondary = False
 
-    contents = { 'X': labels[:-1], 'left': plot_vals[:-1] }
+    contents = { 'left': plot_vals }
 
-    if ( runningTot == True ):
-      rt = np.cumsum(plot_vals)
-      contents.update({ 'right': rt[:-1] })
-      cols.append('right')
-      secondary = True
-
-    df = pd.DataFrame(contents, index=labels[:-1])
+    df = pd.DataFrame(contents, index=labels)
     if ( asPct == True ):
       df['left'] = ((df['left'] / df['left'].sum()) * 100)
 
     if ( runningTot == True ):
       rt = np.cumsum(df['left'])
-      df['right'] = rt
+      df.insert(1, 'right', rt)
+      cols.append('right')
       secondary = True
-
 
     ax = df.plot(kind='bar', figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, color=color, edgecolor='white', linewidth=1.75)
     rot = 90
@@ -294,7 +265,7 @@ def plot():
     if ( asPct == True ):
       fmt='{:,.1f}%'
     ax.bar_label(ax.containers[0], label_type='edge', rotation=rot, padding=5, fmt=fmt)
-    ax.set_xticklabels(df['X'], rotation=90, ha='right')
+    ax.set_xticklabels(labels, rotation=90, ha='right')
     ax.margins(y=0.1)
 
     if ( secondary == True ):
@@ -307,20 +278,20 @@ def plot():
 
   plot_hist(index_size_labels, idx_summary, 'Index Count Distribution by Index Size', 'Index Size (GB)', 'Index Count')
   plot_hist(index_size_labels, cluster_summary, 'Cluster Count by Max Index Size', 'Max Index Size (GB) in cluster', 'Cluster Count')
-  plot_hist(cluster_size_labels, cluster_size_summary, 'Cluster Size Distribution', 'Cluster Size (TB)', 'Cluster Count')
+  plot_hist(cluster_size_labels, cluster_size_summary, 'Cluster Size Distribution', 'Cluster Size (GB)', 'Cluster Count')
   plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster Count by RAM Size Distribution', 'Cluster RAM Size (GB)', 'Cluster Count')
   plot_hist(index_size_labels, cluster_ram_summary, 'Cluster RAM total by Cluster Max Index Size', 'Max Index Size (GB) in cluster', 'RAM (GB)')
-  plot_hist(index_size_labels, idx_summary, 'Index Size Distribution (as percentage) across all Clusters', 'Index Size (GB)', 'Percentage', True, color=['orange'])
-  df = plot_hist(index_size_labels, cluster_ram_summary, 'Cluster RAM Size Distribution (as percentage) by Largest Index in Cluster', 'Index Size (GB)', 'Percentage', True, True)
-  plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster Count (as percentage) by RAM Size', 'Cluster RAM Size (GB)', 'Percentage', True)
-  plot_hist(index_size_labels, cluster_summary, 'Cluster Count Distribution (as percentage) by Cluster Max Index Size', 'Max Index Size (GB) in cluster', 'Percentage', True,
+  plot_hist(index_size_labels, idx_summary, 'Index Size Distribution (as percentage) across all Clusters', 'Index Size (GB)', 'Percentage', asPct=True, color=['orange'])
+  plot_hist(index_size_labels, cluster_ram_summary, 'Cluster RAM Size Distribution (as percentage) by Largest Index in Cluster', 'Index Size (GB)', 'Percentage', asPct=True, runningTot=True)
+  plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster Count (as percentage) by RAM Size', 'Index Size (GB)', 'Percentage', asPct=True)
+  plot_hist(index_size_labels, cluster_summary, 'Cluster Count Distribution (as percentage) by Cluster MaxIndex Size', 'Max Index Size (GB) in cluster', 'Percentage', asPct=True,
             color=['green'])
   plot_pct_stacked(index_size_labels, [idx_ds_summary, idx_ri_summary], ["Data Streams", "Regular Indexes"],
                    "Data Streams vs. Regular Indexes by Index Size as Percentage (with counts)", 'Index Size (GB)', 'Percentage')
 
   plot_pct_pie(index_size_labels, shard_dist, shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage')
   plot_pct_pie(index_size_labels, shard_dist, shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage', transpose=True)
-  plot_pct_pie(index_size_labels, shard_size_dist, shard_dist_labels, "Accumulated Indexs by Index Bucket by Shard", 'Shards', 'Percentage', transpose=True)
+  plot_pct_pie(index_size_labels, shard_size_dist, shard_dist_labels, "Accumulated Index Sizes by Index Bucket by Shard", 'Shards', 'Percentage', transpose=True)
   plt.show()
 
 def doit():
@@ -375,14 +346,13 @@ def doit():
   cluster_summary = [0] * len(index_size_bins)
   cluster_ram_summary = [0] * len(index_size_bins)
 
-  cluster_bucket_size = 64
   cluster_size_bins = [int(x)*args.clusterbucketsize for x in range(0, args.numclusterbuckets+1)]
   cluster_size_labels  = [">"+ str(x)+"GB" for x in cluster_size_bins]
   # cluster_size_labels[-1] = ">" + str(cluster_size_bins[-2] + cluster_bucket_size) + "GB"
   cluster_size_labels[0] = ">0GB"
   cluster_size_summary = [0] * len(cluster_size_bins)
 
-  cluster_ram_size_bins = [int(x)*args.idxbucketsize for x in range(0,args.numclusterbuckets+1)]
+  cluster_ram_size_bins = [int(x)*args.clusterbucketsize for x in range(0,args.numclusterbuckets+1)]
   cluster_ram_size_labels  = [">"+ str(x)+"GB" for x in cluster_ram_size_bins]
   # cluster_ram_size_labels[-1] = ">" + str(cluster_ram_size_bins[-2] + args.idxbucketsize) + "GB"
   cluster_ram_size_labels[0] = ">0GB"
