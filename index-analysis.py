@@ -2,6 +2,7 @@ idx_summary = []
 idx_ds_summary = []
 idx_ri_summary = []
 ds_summary = []
+ds_counts = []
 cluster_summary = []
 cluster_ram_summary = []
 
@@ -51,6 +52,7 @@ def process(args):
   largest_cluster_found=0
   max_ram_found=0
   largest_number_of_shards=0
+  largest_ds=0
 
   # Raw index size file
   clusters_examined = 0
@@ -65,7 +67,6 @@ def process(args):
 
   with open(args.idxfile, newline='') as f:
     reader = csv.reader(f, delimiter='|', quotechar='"')
-    print(reader)
     for cluster_id, version, nodes, indexes in reader:
 
       records_read += 1
@@ -125,6 +126,7 @@ def process(args):
         else:
           ds_idx_sizes[ds_name] = round(idx_sizes[i])
       update_hist(list(ds_idx_sizes.values()), args.idxbucketsize, ds_summary, countOnly=False)
+      update_hist(list(ds_idx_sizes.values()), args.idxbucketsize, ds_counts)
 
       non_zero = [i for i, idx_size in enumerate(idx_counts) if idx_size != 0 ]
       cluster_summary[non_zero[-1]] += 1
@@ -147,6 +149,8 @@ def process(args):
         max_ram_found = cluster_ram_total
       if ( max(idx_shards) > largest_number_of_shards):
         largest_number_of_shards = max(idx_shards)
+      if ( max(ds_idx_sizes.values(), default=0) > largest_ds):
+        largest_ds = max(ds_idx_sizes.values(), default=0)
 
 
   print("=== Index Size Distributions")
@@ -168,8 +172,9 @@ def process(args):
   print("=== Total Index size by Index Bucket by Shard (GB)")
   print(*list(["Shard"] + index_size_labels), sep='\t')
   [ print(*[shard_dist_labels[i], *v], sep='\t') for i,v in enumerate(shard_size_dist) ]
-  print("=== Total Data Stream Sixe by Index Bucket (GB)")
+  print("=== Counts and Total Data Stream Size by Index Bucket (GB)")
   print(*index_size_labels, sep='\t')
+  print(*ds_counts, sep='\t')
   print(*ds_summary, sep='\t')
 
 
@@ -184,6 +189,7 @@ def process(args):
   print("Largest Cluster by RAM              %d (GB)" % max_ram_found)
   print("Percentage of Data Streams          %d PCT" % (( sum(idx_ds_summary) / ( sum(idx_ds_summary) + sum(idx_ri_summary)))*100) )
   print("Largest number of shards            %d" % largest_number_of_shards)
+  print("Largest Data Stream                 %d (GB)" % largest_ds)
 
 
 def plot():
@@ -322,6 +328,7 @@ def plot():
   plot_pct_pie(index_size_labels, shard_dist, shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage', transpose=True)
   plot_pct_pie(index_size_labels, shard_size_dist, shard_dist_labels, "Accumulated Index Sizes by Index Bucket by Shard", 'Shards', 'Percentage', transpose=True)
   plot_hist(index_size_labels, ds_summary, 'DataStream Total Sizes by Bucket', 'Index Size (GB)', 'Percentage', asPct=True, color=['limegreen'])
+  plot_hist(index_size_labels, ds_counts, 'DataStream Counts by Bucket', 'Index Size (GB)', 'Percentage', asPct=True, color=['limegreen'])
 
   plt.show()
 
@@ -353,6 +360,7 @@ def doit():
   global idx_ds_summary
   global idx_ri_summary
   global ds_summary
+  global ds_counts
 
   global cluster_summary
   global cluster_ram_summary
@@ -379,6 +387,7 @@ def doit():
   cluster_summary = [0] * len(index_size_bins)
   cluster_ram_summary = [0] * len(index_size_bins)
   ds_summary = [0] * len(index_size_bins)
+  ds_counts = [0] * len(index_size_bins)
 
   cluster_size_bins = [int(x)*args.clusterbucketsize for x in range(0, args.numclusterbuckets+1)]
   cluster_size_labels  = [">"+ str(x)+"GB" for x in cluster_size_bins]
