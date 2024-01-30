@@ -1,6 +1,7 @@
 idx_summary = []
 idx_ds_summary = []
 idx_ri_summary = []
+ds_summary = []
 cluster_summary = []
 cluster_ram_summary = []
 
@@ -33,6 +34,17 @@ def process(args):
       else:
         hist[bucket] += values[i]
 
+
+
+# regex for index names for data stream in the followqing pattern
+# .ds-<data-stream-name>-YYYY.mm.dd-000001
+  ds_pattern = re.compile(
+        r'(?P<partial>partial-)?'
+        r'(?P<restored>restored-)?'
+        r'(?P<prefix>\.ds-)'
+        r'(?P<name>.*)-'
+        r'(?P<suffix>\d{4}\.\d{2}\.\d{2}-\d{6})'
+    ,re.IGNORECASE)
   ver_match = re.compile(args.version, re.IGNORECASE)
   cluster_details = []
   max_index_size_found=0
@@ -53,6 +65,7 @@ def process(args):
 
   with open(args.idxfile, newline='') as f:
     reader = csv.reader(f, delimiter='|', quotechar='"')
+    print(reader)
     for cluster_id, version, nodes, indexes in reader:
 
       records_read += 1
@@ -75,8 +88,8 @@ def process(args):
 
       k = [i for i in [i.split(',') for i in indexes.split(';')[:-1]]]
       k = [i for i in k if len(i) == 3]
-      if args.exclude_idx_match != "":
-        k = [v for i,v in enumerate(k) if ".ds" not in v[0]]
+      if args.exclude_ds == True:
+        k = [v for i,v in enumerate(k) if re.match(ds_pattern, v[0]) is None]
       k = [l for l in [[j(k or 0) for j, k in zip(tp, i)] for i in k] if l[2] > 0]
 
 #      This is the above three lines in one line, harder to debug!
@@ -99,6 +112,19 @@ def process(args):
       idx_ri_sizes = [idx_sizes[i] for i,v in enumerate(idx_names) if ".ds" not in v]
       update_hist(idx_ds_sizes, args.idxbucketsize, idx_ds_summary)
       update_hist(idx_ri_sizes, args.idxbucketsize, idx_ri_summary)
+
+      # Compute the size of the Data Streams based on the Data Stream name embeeded into the index names
+      ds_idx_sizes = {}
+      for i in range(len(idx_names)):
+        match = re.match(ds_pattern, idx_names[i])
+        if match is None:
+          continue
+        ds_name = match.groups()[-2]
+        if (ds_idx_sizes.get(ds_name) is not None):
+          ds_idx_sizes[ds_name] += round(idx_sizes[i])
+        else:
+          ds_idx_sizes[ds_name] = round(idx_sizes[i])
+      update_hist(list(ds_idx_sizes.values()), args.idxbucketsize, ds_summary, countOnly=False)
 
       non_zero = [i for i, idx_size in enumerate(idx_counts) if idx_size != 0 ]
       cluster_summary[non_zero[-1]] += 1
@@ -142,6 +168,9 @@ def process(args):
   print("=== Total Index size by Index Bucket by Shard (GB)")
   print(*list(["Shard"] + index_size_labels), sep='\t')
   [ print(*[shard_dist_labels[i], *v], sep='\t') for i,v in enumerate(shard_size_dist) ]
+  print("=== Total Data Stream Sixe by Index Bucket (GB)")
+  print(*index_size_labels, sep='\t')
+  print(*ds_summary, sep='\t')
 
 
   print("=== Stats ")
@@ -292,6 +321,8 @@ def plot():
   plot_pct_pie(index_size_labels, shard_dist, shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage')
   plot_pct_pie(index_size_labels, shard_dist, shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage', transpose=True)
   plot_pct_pie(index_size_labels, shard_size_dist, shard_dist_labels, "Accumulated Index Sizes by Index Bucket by Shard", 'Shards', 'Percentage', transpose=True)
+  plot_hist(index_size_labels, ds_summary, 'DataStream Total Sizes by Bucket', 'Index Size (GB)', 'Percentage', asPct=True, color=['limegreen'])
+
   plt.show()
 
 def doit():
@@ -311,7 +342,7 @@ def doit():
   parser.add_argument("--clusterbucketsize", help="Size of Cluster RAM Buckets (in GB)", default=64, type=int)
   parser.add_argument("--numclusterbuckets", help="Number of Cluster RAM Buckets", default=8, type=int)
   parser.add_argument("--version", help="Version to filter on", default="")
-  parser.add_argument("--exclude_idx_match", help="Index names to filter out", default="")
+  parser.add_argument("--exclude_ds", help="Exclude Data Streams", default=False, type=bool)
   args=parser.parse_args()
 
   import numpy as np
@@ -321,6 +352,8 @@ def doit():
   global idx_summary
   global idx_ds_summary
   global idx_ri_summary
+  global ds_summary
+
   global cluster_summary
   global cluster_ram_summary
 
@@ -345,6 +378,7 @@ def doit():
   idx_ri_summary = [0] * len(index_size_bins)
   cluster_summary = [0] * len(index_size_bins)
   cluster_ram_summary = [0] * len(index_size_bins)
+  ds_summary = [0] * len(index_size_bins)
 
   cluster_size_bins = [int(x)*args.clusterbucketsize for x in range(0, args.numclusterbuckets+1)]
   cluster_size_labels  = [">"+ str(x)+"GB" for x in cluster_size_bins]
