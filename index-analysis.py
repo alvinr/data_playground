@@ -5,6 +5,8 @@ ds_summary = []
 ds_counts = []
 cluster_summary = []
 cluster_ram_summary = []
+cluster_ram_summary_by_shard = []
+
 
 cluster_size_bins = []
 cluster_size_labels  = []
@@ -141,6 +143,9 @@ def process(args):
         update_hist([idx_sizes[i]], args.idxbucketsize, shard_dist[norm_i])
         update_hist([round(idx_sizes[i])], args.idxbucketsize, shard_size_dist[norm_i], countOnly=False)
 
+      max_shard = min(args.numshardbuckets, max(idx_shards)-1)
+      update_hist([round(cluster_ram_total)], args.idxbucketsize, cluster_ram_summary_by_shard[max_shard], countOnly=False)
+
       if ( max(idx_sizes) > max_index_size_found ):
         max_index_size_found = max(idx_sizes)
       if ( cluster_total > largest_cluster_found ):
@@ -176,7 +181,9 @@ def process(args):
   print(*index_size_labels, sep='\t')
   print(*ds_counts, sep='\t')
   print(*ds_summary, sep='\t')
-
+  print("=== Cluster Ram by Max Index Size by Shard")
+  print(*list(["Shard"] + index_size_labels), sep='\t')
+  [ print(*[shard_dist_labels[i], *v], sep='\t') for i,v in enumerate(cluster_ram_summary_by_shard) ]
 
   print("=== Stats ")
   print("Records examined                    %d" % records_read)
@@ -197,7 +204,7 @@ def plot():
   import matplotlib.pyplot as plt
   import numpy as np
 
-  def plot_pct_pie(labels, values, value_names, title, xlabel, ylabel, color=['limegreen', 'orange'], colormap='', transpose=False):
+  def plot_pct_pie(labels, values, value_names, title, xlabel, ylabel, color='', colormap='Paired', transpose=False, asOverallPct=False):
     cols = []
     rot = 90
     d = { }
@@ -212,7 +219,12 @@ def plot():
     # Exclude columns where all values are zero (to avoid div by zero errors)
     non_zero_cols = (df != 0).any()
     cols = non_zero_cols.index[non_zero_cols].tolist()
-    df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100)
+    if (asOverallPct == False):
+      df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100)
+    else:
+      overall_total = df.sum(numeric_only=True).sum()
+      df = (df / overall_total) * 100
+
     df = df.fillna(0)
 
     slice_labels = list(df.columns)
@@ -238,7 +250,7 @@ def plot():
       for j in range(len(rm_rows)):
         df_slice = df_slice.drop(rm_rows[j], axis=0)
       explode = list([0.1 + (i/20) for i in range(len(list(df_slice.index)))])
-      ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', figsize=(12,12), autopct='%1.0f%%', colormap='Paired',
+      ax_slice  = df_slice.plot(ax=axis[use_row, use_col], ylabel="", kind='pie', figsize=(12,12), autopct='%1.0f%%', colormap=colormap,
                                 explode=explode, startangle=270, rotatelabels=True)
       ax_slice.set_title(slices[i], loc='left', pad=5)
       ax_slice.margins(x=5, y=5)
@@ -246,12 +258,12 @@ def plot():
     return df
 
 
-  def plot_pct_stacked(labels, values, value_names, title, xlabel, ylabel, color=['limegreen', 'orange'], colormap='', transpose=False):
+  def plot_stacked(labels, values, value_names, title, xlabel, ylabel, color=['limegreen', 'orange'], colormap='', transpose=False, asPct=True, asOverallPct=False):
     cols = []
     rot = 90
     d = {}
     for i in range(len(values)):
-      lbl = 'Y' + str(i)
+      lbl = value_names[i]
       d[lbl] = values[i]
       cols.append(lbl)
 
@@ -262,15 +274,24 @@ def plot():
     if transpose == True:
       df = df.transpose()
       cols = list(df.columns)
-    df['Total'] = df[cols].sum(axis=1)
-    df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100).round(2)
-    ax = df.plot(kind='bar', stacked=True, figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, legend=False, color=color, edgecolor='white', linewidth=1.75)
+
+    fmt='{:,.0f}%'
+    if ( asPct == True):
+      if ( asOverallPct == True):
+        overall_total = df.sum(numeric_only=True).sum()
+        df = (df / overall_total) * 100
+        fmt='{:,.1f}%'
+      else:
+        df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100).round(2)
+    df['Total'] = df[cols].sum(axis=1).round()
+    print(df)
+    ax = df.plot(kind='bar', stacked=True, figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, colormap='Paired', edgecolor='white', linewidth=1.75)
     for c in ax.containers:
-      xlabels = [f'{w:.0f}%' if (w := v.get_height()) > 0 else '' for v in c ]
-      ax.bar_label(c, labels=xlabels, label_type='center', rotation=rot, padding=5, fmt='{:,.0f}%')
-    ax.bar_label(ax.containers[-1], labels=df['Total'], label_type='edge', rotation=45, padding=5)
+      xlabels = [f'{w:.1f}%' if (w := v.get_height()) > 1 else '' for v in c ]
+      ax.bar_label(c, labels=xlabels, label_type='center', rotation=rot, padding=1)
+    ax.bar_label(ax.containers[-1], label_type='edge', rotation=45, padding=5, fmt=fmt)
     ax.legend(bbox_to_anchor=(1.05, 1), loc='best')
-    ax.legend(value_names);
+    ax.legend(cols);
     ax.margins(y=0.1)
 
     return df
@@ -321,14 +342,18 @@ def plot():
   plot_hist(cluster_ram_size_labels, cluster_ram_size_summary, 'Cluster Count (as percentage) by RAM Size', 'Index Size (GB)', 'Percentage', asPct=True)
   plot_hist(index_size_labels, cluster_summary, 'Cluster Count Distribution (as percentage) by Cluster MaxIndex Size', 'Max Index Size (GB) in cluster', 'Percentage', asPct=True,
             color=['green'])
-  plot_pct_stacked(index_size_labels, [idx_ds_summary, idx_ri_summary], ["Data Streams", "Regular Indexes"],
-                   "Data Streams vs. Regular Indexes by Index Size as Percentage (with counts)", 'Index Size (GB)', 'Percentage')
+  plot_stacked(index_size_labels, [idx_ds_summary, idx_ri_summary], ["Data Streams", "Regular Indexes"],
+                   "Data Streams vs. Regular Indexes by Index Size as Percentage (with counts)", 'Index Size (GB)', 'Percentage', color=['limegreen', 'orange'])
 
   plot_pct_pie(index_size_labels, shard_dist, shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage')
   plot_pct_pie(index_size_labels, shard_dist, shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage', transpose=True)
   plot_pct_pie(index_size_labels, shard_size_dist, shard_dist_labels, "Accumulated Index Sizes by Index Bucket by Shard", 'Shards', 'Percentage', transpose=True)
-  plot_hist(index_size_labels, ds_summary, 'DataStream Total Sizes by Bucket', 'Index Size (GB)', 'Percentage', asPct=True, color=['limegreen'])
+  # plot_hist(index_size_labels, ds_summary, 'DataStream Total Sizes by Bucket', 'Index Size (GB)', 'Percentage', asPct=True, color=['limegreen'])
   plot_hist(index_size_labels, ds_counts, 'DataStream Counts by Bucket', 'Index Size (GB)', 'Percentage', asPct=True, color=['limegreen'])
+  df = plot_pct_pie(index_size_labels, cluster_ram_summary_by_shard, shard_dist_labels, "Accumulated Index Sizes by Index Bucket by Shard", 'Shards', 'Percentage', asOverallPct=True)
+  print(df.round(2))
+  plot_stacked(index_size_labels, cluster_ram_summary_by_shard, shard_dist_labels,
+                   "ARR percentage by Index Size by Shards", 'Shards', 'Percentage', colormap='Paired', asPct=True, asOverallPct=True, transpose=True)
 
   plt.show()
 
@@ -364,6 +389,7 @@ def doit():
 
   global cluster_summary
   global cluster_ram_summary
+  global cluster_ram_summary_by_shard
 
   global cluster_size_bins
   global cluster_size_labels
@@ -386,6 +412,8 @@ def doit():
   idx_ri_summary = [0] * len(index_size_bins)
   cluster_summary = [0] * len(index_size_bins)
   cluster_ram_summary = [0] * len(index_size_bins)
+  cluster_ram_summary_by_shard = [ [0 for y in range(len(index_size_bins))] for x in range(0, args.numshardbuckets+1) ]
+
   ds_summary = [0] * len(index_size_bins)
   ds_counts = [0] * len(index_size_bins)
 
