@@ -215,7 +215,6 @@ def plot():
     df = pd.DataFrame(d, index=labels)
     if transpose == True:
       df = df.transpose()
-
     # Exclude columns where all values are zero (to avoid div by zero errors)
     non_zero_cols = (df != 0).any()
     cols = non_zero_cols.index[non_zero_cols].tolist()
@@ -283,13 +282,17 @@ def plot():
         fmt='{:,.1f}%'
       else:
         df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100).round(2)
-    df['Total'] = df[cols].sum(axis=1).round()
-    print(df)
+    df['Total'] = df[cols].sum(axis=1)
     ax = df.plot(kind='bar', stacked=True, figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, colormap='Paired', edgecolor='white', linewidth=1.75)
     for c in ax.containers:
       xlabels = [f'{w:.1f}%' if (w := v.get_height()) > 1 else '' for v in c ]
       ax.bar_label(c, labels=xlabels, label_type='center', rotation=rot, padding=1)
-    ax.bar_label(ax.containers[-1], label_type='edge', rotation=45, padding=5, fmt=fmt)
+
+    if ( asPct == False ):
+      tot_labels = [f'{v:.0f}' for v in df['Total'] ]
+    else:
+      tot_labels = [f'{v:.1f}%' for v in df['Total'] ]
+    ax.bar_label(ax.containers[-1], labels=tot_labels, fmt='{:,.3f}$$$', label_type='edge', rotation=45, padding=5)
     ax.legend(bbox_to_anchor=(1.05, 1), loc='best')
     ax.legend(cols);
     ax.margins(y=0.1)
