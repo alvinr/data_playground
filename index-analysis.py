@@ -37,12 +37,13 @@ def process(args):
       else:
         hist[bucket] += values[i]
 
-  def update_largest(stat, values, labels):
+  def update_largest(stat, values, labels, extra=''):
     max_val = max(values, default=0)
-    if ( max_val > stat[1]):
+    if ( max_val > stat['value']):
       max_index = values.index(max(values, default=0))
-      stat[0] = labels[max_index]
-      stat[1] = max_val
+      stat['name'] = labels[max_index]
+      stat['value'] = max_val
+      stat['extra'] = extra
 
   # regex for index names for data stream in the followqing pattern
   # [partial-][restored-].ds-<data-stream-name>-YYYY.mm.dd-000001
@@ -56,11 +57,11 @@ def process(args):
   ver_match = re.compile(args.version, re.IGNORECASE)
 
   cluster_details = []
-  max_index_size_found=['name', 0]
-  largest_cluster_found=['name', 0]
-  max_ram_found=['name', 0]
-  largest_number_of_shards=['name', 0]
-  largest_ds=['name', 0]
+  max_index_size_found={'name': '', 'value': 0, 'extra':''}
+  largest_cluster_found={'name': '', 'value': 0, 'extra':''}
+  max_ram_found={'name': '', 'value': 0, 'extra':''}
+  largest_number_of_shards={'name': '', 'value': 0, 'extra':''}
+  largest_ds={'name': '', 'value': 0, 'extra':''}
 
   # Raw index size file
   clusters_examined = 0
@@ -152,12 +153,12 @@ def process(args):
       max_shard = min(args.numshardbuckets, max(idx_shards)-1)
       update_hist([round(cluster_ram_total)], args.idxbucketsize, cluster_ram_summary_by_shard[max_shard], countOnly=False)
 
-      update_largest(max_index_size_found, idx_sizes, idx_names)
+      update_largest(max_index_size_found, idx_sizes, idx_names, cluster_id)
       update_largest(largest_cluster_found, [cluster_total], [cluster_id])
       update_largest(max_ram_found, [cluster_ram_total], [cluster_id])
-      update_largest(largest_number_of_shards, idx_shards, idx_names)
+      update_largest(largest_number_of_shards, idx_shards, idx_names, cluster_id)
       update_largest(largest_cluster_found, [cluster_total], [cluster_id])
-      update_largest(largest_ds, list(ds_idx_sizes.values()), list(ds_idx_sizes.keys()))
+      update_largest(largest_ds, list(ds_idx_sizes.values()), list(ds_idx_sizes.keys()), cluster_id)
 
 
   print("=== Index Size Distributions")
@@ -190,15 +191,15 @@ def process(args):
   print("=== Stats ")
   print("Records examined                    %d" % records_read)
   print("Clusters examined                   %d" % clusters_examined)
-  print("Not version matched with '%s'       %d" % (args.version, not_version_matched))
+  print("Not version matched with            '%s' is %d" % (args.version, not_version_matched))
   print("Clusters with no indexes            %d" % no_indexes_reported)
   print("Clusters with no indexes over 1MB   %d" % no_indexes_over_1mb)
-  print("Largest Cluster by Total Index Size %d (GB) %s" % (largest_cluster_found[1], largest_cluster_found[0]))
-  print("Largest Index                       %d (GB) %s" % (max_index_size_found[1], max_index_size_found[0]))
-  print("Largest Cluster by RAM              %d (GB) %s" % (max_ram_found[1], max_ram_found[0]))
-  print("Percentage of Data Streams          %d PCT" % (( sum(idx_ds_summary) / ( sum(idx_ds_summary) + sum(idx_ri_summary)))*100) )
-  print("Largest number of shards            %d %s" % (largest_number_of_shards[1], largest_number_of_shards[0]))
-  print("Largest Data Stream                 %d (GB) %s" % (largest_ds[1], largest_ds[0]))
+  print("Largest Cluster by Total Index Size %d (GB) %s" % (largest_cluster_found['value'], largest_cluster_found['name']))
+  print("Largest Index                       %d (GB) in Index %s in Cluster %s" % (max_index_size_found['value'], max_index_size_found['name'], max_index_size_found['extra']))
+  print("Largest Cluster by RAM              %d (GB) in Cluster %s" % (max_ram_found['value'], max_ram_found['name']))
+  print("Largest number of shards            %d %s in Cluster %s" % (largest_number_of_shards['value'], largest_number_of_shards['name'], largest_number_of_shards['extra']))
+  print("Largest Data Stream                 %d (GB) in Data Stream %s in Cluster %s" % (largest_ds['value'], largest_ds['name'], largest_ds['extra']))
+  print("Percentage of Data Streams          %d%%" % (( sum(idx_ds_summary) / ( sum(idx_ds_summary) + sum(idx_ri_summary)))*100) )
 
 
 def plot():
