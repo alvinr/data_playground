@@ -6,6 +6,7 @@ ds_counts = []
 cluster_summary = []
 cluster_ram_summary = []
 cluster_ram_summary_by_shard = []
+cluster_ml_ram_summary_by_shard = []
 
 
 cluster_size_bins = []
@@ -74,20 +75,33 @@ def process(args):
   csv.field_size_limit(sys.maxsize)
   records_read = 0
 
+  def calc_ram_total(nodes):
+    ram_total = 0
+    if ( len(nodes) !=0 ):
+      ram = nodes.split(',')
+      ram = [int(i)/(1024) for i in ram]
+      ram_total = sum(ram)
+    return ram_total
+
   with open(args.idxfile, newline='') as f:
     reader = csv.reader(f, delimiter='|', quotechar='"')
-    for cluster_id, version, nodes, indexes in reader:
+    # for cluster_id, version, nodes, indexes, ml_nodes in reader:
+    for row in reader:
+      cluster_id = row[0]
+      version    = row[1]
+      nodes      = row[2]
+      indexes    = row[3]
+      if (len(row) > 4):
+        # allows backward compatibility with older samples
+        ml_nodes = row[4]
 
       records_read += 1
       if ( ver_match.match(version) == None ):
         not_version_matched +=1
         continue
 
-      cluster_ram_total = 0
-      if ( len(nodes) !=0 ):
-        cluster_ram = nodes.split(',')
-        cluster_ram = [int(i)/(1024) for i in cluster_ram]
-        cluster_ram_total = sum(cluster_ram)
+      cluster_ram_total = calc_ram_total(nodes)
+      cluster_ml_ram_total = calc_ram_total(ml_nodes)
 
       # Take a string of [[index name, shard count, size];] (e.g. 'metrics-endpoint.metadata_current_default,1,225)' and
       # create three lists of index name, shard count, index size
@@ -152,6 +166,7 @@ def process(args):
 
       max_shard = min(args.numshardbuckets, max(idx_shards)-1)
       update_hist([round(cluster_ram_total)], args.idxbucketsize, cluster_ram_summary_by_shard[max_shard], countOnly=False)
+      update_hist([round(cluster_ml_ram_total)], args.idxbucketsize, cluster_ml_ram_summary_by_shard[max_shard], countOnly=False)
 
       update_largest(max_index_size_found, idx_sizes, idx_names, cluster_id)
       update_largest(largest_cluster_found, [cluster_total], [cluster_id])
@@ -184,9 +199,12 @@ def process(args):
   print(*index_size_labels, sep='\t')
   print(*ds_counts, sep='\t')
   print(*ds_summary, sep='\t')
-  print("=== Cluster Ram by Max Index Size by Shard")
+  print("=== Cluster Ram (GB) by Max Index Size by Shard")
   print(*list(["Shard"] + index_size_labels), sep='\t')
   [ print(*[shard_dist_labels[i], *v], sep='\t') for i,v in enumerate(cluster_ram_summary_by_shard) ]
+  print("=== Cluster ML Ram (GB) by Max Index Size by Shard")
+  print(*list(["Shard"] + index_size_labels), sep='\t')
+  [ print(*[shard_dist_labels[i], *v], sep='\t') for i,v in enumerate(cluster_ml_ram_summary_by_shard) ]
 
   print("=== Stats ")
   print("Records examined                    %d" % records_read)
@@ -362,6 +380,8 @@ def plot():
   print(df.round(2))
   plot_stacked(index_size_labels, cluster_ram_summary_by_shard, shard_dist_labels,
                    "ARR percentage by Index Size by Shards", 'Shards', 'Percentage', colormap='Paired', asPct=True, asOverallPct=True, transpose=True)
+  plot_stacked(index_size_labels, cluster_ml_ram_summary_by_shard, shard_dist_labels,
+                   "ML RAM by Index Size by Shards", 'Shards', 'Percentage', colormap='Paired', asPct=True, asOverallPct=True)
 
   plt.show()
 
@@ -398,6 +418,7 @@ def doit():
   global cluster_summary
   global cluster_ram_summary
   global cluster_ram_summary_by_shard
+  global cluster_ml_ram_summary_by_shard
 
   global cluster_size_bins
   global cluster_size_labels
@@ -421,6 +442,7 @@ def doit():
   cluster_summary = [0] * len(index_size_bins)
   cluster_ram_summary = [0] * len(index_size_bins)
   cluster_ram_summary_by_shard = [ [0 for y in range(len(index_size_bins))] for x in range(0, args.numshardbuckets+1) ]
+  cluster_ml_ram_summary_by_shard = [ [0 for y in range(len(index_size_bins))] for x in range(0, args.numshardbuckets+1) ]
 
   ds_summary = [0] * len(index_size_bins)
   ds_counts = [0] * len(index_size_bins)

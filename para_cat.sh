@@ -6,7 +6,7 @@ if [ $# -eq 0 ]; then
   exit 1
 fi
 
-PARTS=10
+PARTS=20
 FILE=$(realpath $1)
 PREFIX=$(date +%s)_
 
@@ -18,9 +18,11 @@ fi
 pushd .; cd /tmp; split -n l/$PARTS $FILE $PREFIX; popd 
 
 for i in /tmp/$PREFIX_*; do
-  ./get_cat_indices.sh $i $OUT &
+  ./get_cat_indices.sh $i $i.out &
 done
 wait
+
+cat /tmp/$PREFIX_*.out > $OUT
 
 #rm /tmp/$PREFIX*
 

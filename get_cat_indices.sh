@@ -12,7 +12,7 @@ if [ $# -eq 2 ]; then
 fi
 
 tmpjson=$(mktemp $FILE.XXXXXX.json)
-tmpout=$(mktemp $FILE.XXXXXX.txt)
+tmpout=$(mktemp $FILE.XXXXXX.tmp)
 
 for i in $(cat $FILE | tr -d '"'); do
   echo "---"
@@ -24,9 +24,11 @@ for i in $(cat $FILE | tr -d '"'); do
   INDEXES=$(ecl api -H "X-Management-Request: true" -X GET "v1/deployments/$DEPLOYMENT_ID/elasticsearch/main-elasticsearch/proxy/_cat/indices?pri=true&h=index,pri,pri.store.size&bytes=mb" | tr '\n' ';' | tr -s ' ' | tr ' ' ',')
   RAM=$(ecl api -H 'X-Management-Request: true' -X GET "v1/deployments/$DEPLOYMENT_ID/elasticsearch/main-elasticsearch/proxy/_cat/nodes?h=ram.max,node.role&bytes=mb" | grep -e "h" -e "d" | cut -f 1 -d " " | tr -s " ")
   RAM=$(echo ${RAM[0]})
+  ML_RAM=$(ecl api -H 'X-Management-Request: true' -X GET "v1/deployments/$DEPLOYMENT_ID/elasticsearch/main-elasticsearch/proxy/_cat/nodes?h=ram.max,node.role&bytes=mb" | grep -e "l" | cut -f 1 -d " " | tr -s " ")
+  ML_RAM=$(echo ${ML_RAM[0]})
   VERSION=$(ecl api -H 'X-Management-Request: true' -X GET "v1/deployments/$DEPLOYMENT_ID/elasticsearch/main-elasticsearch/proxy/_cat/nodes?h=version" | head -1)
-  echo "$i|$VERSION|${RAM// /,}|$INDEXES" >> $tmpout
+  echo "$i|$VERSION|${RAM// /,}|$INDEXES|${ML_RAM// /,}" >> $tmpout
 done
 
-cat $tmpout >> $OUT
+cat $tmpout > $OUT
 
