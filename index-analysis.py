@@ -7,6 +7,7 @@ cluster_summary = []
 cluster_ram_summary = []
 cluster_ram_summary_by_shard = []
 cluster_ml_ram_summary_by_shard = []
+cluster_ml_ram_count_by_shard = []
 
 
 cluster_size_bins = []
@@ -28,15 +29,18 @@ def process(args):
   import numpy as np
   import re
 
-  def update_hist(values, bucket_size, hist, countOnly=True):
+  def update_hist(values, bucket_size, hist, values2=None, countOnly=True):
     max_cols = len(hist)-1
+    addThis = values
+    if ( values2 is not None):
+      addThis=values2
     for i in range(len(values)):
       bucket, rem = divmod(values[i], bucket_size)
       bucket = int(min(bucket, max_cols))
       if (countOnly == True):
         hist[bucket] += 1
       else:
-        hist[bucket] += values[i]
+        hist[bucket] += addThis[i]
 
   def update_largest(stat, values, labels, extra=''):
     max_val = max(values, default=0)
@@ -63,12 +67,17 @@ def process(args):
   max_ram_found={'name': '', 'value': 0, 'extra':''}
   largest_number_of_shards={'name': '', 'value': 0, 'extra':''}
   largest_ds={'name': '', 'value': 0, 'extra':''}
+  largest_ml_deployment={'name': '', 'value': 0, 'extra':''}
 
   # Raw index size file
   clusters_examined = 0
+  clusters_with_ml = 0
   no_indexes_reported = 0
   no_indexes_over_1mb = 0
   not_version_matched = 0
+  total_ram = 0
+  total_ml_ram = 0
+
   tp = [str, int, int]
   linenum = 0
 
@@ -101,7 +110,9 @@ def process(args):
         continue
 
       cluster_ram_total = calc_ram_total(nodes)
+      total_ram += cluster_ram_total
       cluster_ml_ram_total = calc_ram_total(ml_nodes)
+      total_ml_ram += cluster_ml_ram_total
 
       # Take a string of [[index name, shard count, size];] (e.g. 'metrics-endpoint.metadata_current_default,1,225)' and
       # create three lists of index name, shard count, index size
@@ -166,7 +177,11 @@ def process(args):
 
       max_shard = min(args.numshardbuckets, max(idx_shards)-1)
       update_hist([round(cluster_ram_total)], args.idxbucketsize, cluster_ram_summary_by_shard[max_shard], countOnly=False)
-      update_hist([round(cluster_ml_ram_total)], args.idxbucketsize, cluster_ml_ram_summary_by_shard[max_shard], countOnly=False)
+
+      if (cluster_ml_ram_total > 0):
+        clusters_with_ml += 1
+        update_hist([max(idx_sizes)], args.idxbucketsize, cluster_ml_ram_summary_by_shard[max_shard], values2=[round(cluster_ml_ram_total)], countOnly=False)
+        update_hist([max(idx_sizes)], args.idxbucketsize, cluster_ml_ram_count_by_shard[max_shard])
 
       update_largest(max_index_size_found, idx_sizes, idx_names, cluster_id)
       update_largest(largest_cluster_found, [cluster_total], [cluster_id])
@@ -174,6 +189,7 @@ def process(args):
       update_largest(largest_number_of_shards, idx_shards, idx_names, cluster_id)
       update_largest(largest_cluster_found, [cluster_total], [cluster_id])
       update_largest(largest_ds, list(ds_idx_sizes.values()), list(ds_idx_sizes.keys()), cluster_id)
+      update_largest(largest_ml_deployment, [cluster_ml_ram_total], [cluster_id])
 
 
   print("=== Index Size Distributions")
@@ -206,6 +222,7 @@ def process(args):
   print(*list(["Shard"] + index_size_labels), sep='\t')
   [ print(*[shard_dist_labels[i], *v], sep='\t') for i,v in enumerate(cluster_ml_ram_summary_by_shard) ]
 
+
   print("=== Stats ")
   print("Records examined                    %d" % records_read)
   print("Clusters examined                   %d" % clusters_examined)
@@ -215,10 +232,14 @@ def process(args):
   print("Largest Cluster by Total Index Size %d (GB) %s" % (largest_cluster_found['value'], largest_cluster_found['name']))
   print("Largest Index                       %d (GB) in Index %s in Cluster %s" % (max_index_size_found['value'], max_index_size_found['name'], max_index_size_found['extra']))
   print("Largest Cluster by RAM              %d (GB) in Cluster %s" % (max_ram_found['value'], max_ram_found['name']))
+  print("Largest ML Deployment               %d (GB) in Cluster %s" % (largest_ml_deployment['value'], max_ram_found['name']))
+  print("Clusters with ML                    %d (%.2f%%)" % (clusters_with_ml, clusters_with_ml/clusters_examined))
+  print("ML RAM deployed as a %% of RAM       %.2f%%" % (total_ml_ram/total_ram))
   print("Largest number of shards            %d %s in Cluster %s" % (largest_number_of_shards['value'], largest_number_of_shards['name'], largest_number_of_shards['extra']))
   print("Largest Data Stream                 %d (GB) in Data Stream %s in Cluster %s" % (largest_ds['value'], largest_ds['name'], largest_ds['extra']))
-  print("Percentage of Data Streams          %d%%" % (( sum(idx_ds_summary) / ( sum(idx_ds_summary) + sum(idx_ri_summary)))*100) )
-
+  print("Percentage of Data Streams          %.2f%%" % (( sum(idx_ds_summary) / ( sum(idx_ds_summary) + sum(idx_ri_summary)))*100) )
+  print("Total RAM deployed                  %d (GB)" % (total_ram))
+  print("Total ML RAM deployed               %d (GB)" % (total_ml_ram))
 
 def plot():
   import pandas as pd
@@ -277,7 +298,6 @@ def plot():
 
     return df
 
-
   def plot_stacked(labels, values, value_names, title, xlabel, ylabel, color=['limegreen', 'orange'], colormap='', transpose=False, asPct=True, asOverallPct=False):
     cols = []
     rot = 90
@@ -296,28 +316,28 @@ def plot():
       cols = list(df.columns)
 
     fmt='{:,.0f}%'
-    df['Total'] = df[cols].sum(axis=1)
     if ( asPct == True):
       if ( asOverallPct == True):
         overall_total = df.sum(numeric_only=True).sum()
         df = (df / overall_total) * 100
         fmt='{:,.1f}%'
+        df['Total'] = df[cols].sum(axis=1)
       else:
+        df['Total'] = df[cols].sum(axis=1)
         df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100).round(2)
-    if (asOverallPct == True):
-      df['Total'] = df[cols].sum(axis=1)
     ax = df.plot(kind='bar', stacked=True, figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, colormap='Paired', edgecolor='white', linewidth=1.75)
     for c in ax.containers:
       xlabels = [f'{w:.1f}%' if (w := v.get_height()) > 1 else '' for v in c ]
       ax.bar_label(c, labels=xlabels, label_type='center', rotation=rot, padding=1)
 
     if ( asOverallPct == True ):
-      tot_labels = [f'{v:.1f}%' for v in df['Total'] ]
+      tot_labels = [f'{v:.1f}%' if (v > 0.1) else '' for v in df['Total'] ]
     else:
-      tot_labels = [f'{v:.0f}' for v in df['Total'] ]
-    ax.bar_label(ax.containers[-1], labels=tot_labels, fmt='{:,.3f}$$$', label_type='edge', rotation=45, padding=5)
+      tot_labels = [f'{v:.0f}' if (v > 0.1) else '' for v in df['Total'] ]
+    #TODO: Thsi does not deal with putting thr total label in the correct position when then zero values in the stack, the label is align with zero rather than the last bar
+    ax.bar_label(ax.containers[-1], labels=tot_labels, label_type='edge', rotation=45, padding=5)
     ax.legend(bbox_to_anchor=(1.05, 1), loc='best')
-    ax.legend(cols);
+    ax.legend(cols)
     ax.margins(y=0.1)
 
     return df
@@ -377,11 +397,10 @@ def plot():
   # plot_hist(index_size_labels, ds_summary, 'DataStream Total Sizes by Bucket', 'Index Size (GB)', 'Percentage', asPct=True, color=['limegreen'])
   plot_hist(index_size_labels, ds_counts, 'DataStream Counts by Bucket', 'Index Size (GB)', 'Percentage', asPct=True, color=['limegreen'])
   df = plot_pct_pie(index_size_labels, cluster_ram_summary_by_shard, shard_dist_labels, "Accumulated Index Sizes by Index Bucket by Shard", 'Shards', 'Percentage', asOverallPct=True)
-  print(df.round(2))
   plot_stacked(index_size_labels, cluster_ram_summary_by_shard, shard_dist_labels,
                    "ARR percentage by Index Size by Shards", 'Shards', 'Percentage', colormap='Paired', asPct=True, asOverallPct=True, transpose=True)
-  plot_stacked(index_size_labels, cluster_ml_ram_summary_by_shard, shard_dist_labels,
-                   "ML RAM by Index Size by Shards", 'Shards', 'Percentage', colormap='Paired', asPct=True, asOverallPct=True)
+  df = plot_stacked(index_size_labels, cluster_ml_ram_summary_by_shard, shard_dist_labels,
+                   "ML RAM Summary by Index Size by Shards", 'Index Size (GB)', 'Percentage', colormap='Paired', asPct=True, asOverallPct=True)
 
   plt.show()
 
@@ -419,6 +438,7 @@ def doit():
   global cluster_ram_summary
   global cluster_ram_summary_by_shard
   global cluster_ml_ram_summary_by_shard
+  global cluster_ml_ram_count_by_shard
 
   global cluster_size_bins
   global cluster_size_labels
@@ -443,6 +463,7 @@ def doit():
   cluster_ram_summary = [0] * len(index_size_bins)
   cluster_ram_summary_by_shard = [ [0 for y in range(len(index_size_bins))] for x in range(0, args.numshardbuckets+1) ]
   cluster_ml_ram_summary_by_shard = [ [0 for y in range(len(index_size_bins))] for x in range(0, args.numshardbuckets+1) ]
+  cluster_ml_ram_count_by_shard = [ [0 for y in range(len(index_size_bins))] for x in range(0, args.numshardbuckets+1) ]
 
   ds_summary = [0] * len(index_size_bins)
   ds_counts = [0] * len(index_size_bins)
