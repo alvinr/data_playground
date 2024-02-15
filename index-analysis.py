@@ -233,8 +233,8 @@ def process(args):
   print("Largest Index                       %d (GB) in Index %s in Cluster %s" % (max_index_size_found['value'], max_index_size_found['name'], max_index_size_found['extra']))
   print("Largest Cluster by RAM              %d (GB) in Cluster %s" % (max_ram_found['value'], max_ram_found['name']))
   print("Largest ML Deployment               %d (GB) in Cluster %s" % (largest_ml_deployment['value'], max_ram_found['name']))
-  print("Clusters with ML                    %d (%.2f%%)" % (clusters_with_ml, clusters_with_ml/clusters_examined))
-  print("ML RAM deployed as a %% of RAM       %.2f%%" % (total_ml_ram/total_ram))
+  print("Clusters with ML                    %d (%.2f%%)" % (clusters_with_ml, ((clusters_with_ml/clusters_examined)*100)))
+  print("ML RAM deployed as a %% of RAM       %.2f%%" % ((total_ml_ram/total_ram)*100))
   print("Largest number of shards            %d %s in Cluster %s" % (largest_number_of_shards['value'], largest_number_of_shards['name'], largest_number_of_shards['extra']))
   print("Largest Data Stream                 %d (GB) in Data Stream %s in Cluster %s" % (largest_ds['value'], largest_ds['name'], largest_ds['extra']))
   print("Percentage of Data Streams          %.2f%%" % (( sum(idx_ds_summary) / ( sum(idx_ds_summary) + sum(idx_ri_summary)))*100) )
@@ -326,6 +326,7 @@ def plot():
         df['Total'] = df[cols].sum(axis=1)
         df[cols] = df[cols].div(df[cols].sum(axis=1), axis=0).multiply(100).round(2)
     ax = df.plot(kind='bar', stacked=True, figsize=(12, 10), title=title, y=cols, xlabel=xlabel, ylabel=ylabel, colormap='Paired', edgecolor='white', linewidth=1.75)
+
     for c in ax.containers:
       xlabels = [f'{w:.1f}%' if (w := v.get_height()) > 1 else '' for v in c ]
       ax.bar_label(c, labels=xlabels, label_type='center', rotation=rot, padding=1)
@@ -334,8 +335,17 @@ def plot():
       tot_labels = [f'{v:.1f}%' if (v > 0.1) else '' for v in df['Total'] ]
     else:
       tot_labels = [f'{v:.0f}' if (v > 0.1) else '' for v in df['Total'] ]
-    #TODO: Thsi does not deal with putting thr total label in the correct position when then zero values in the stack, the label is align with zero rather than the last bar
-    ax.bar_label(ax.containers[-1], labels=tot_labels, label_type='edge', rotation=45, padding=5)
+
+    # This code is required to but the bar end label on the correct artist (box). Some values are zero, which means you cannot use
+    # ax.contrainer[-1] to set the label. You have to find the last non-zero value, so that the end label is attached to that artist
+    last_nonzero = list(df[cols].ne(0).apply(lambda x: x[::-1].idxmax(), axis=1))
+    for i, col in enumerate(cols):
+      bar_end_labels = [""] * len(last_nonzero)
+      for j in range(len(last_nonzero)):
+        if ( col == last_nonzero[j]):
+          bar_end_labels[j] = tot_labels[j]
+      ax.bar_label(ax.containers[i], labels=bar_end_labels, label_type='edge', rotation=45, padding=1)
+
     ax.legend(bbox_to_anchor=(1.05, 1), loc='best')
     ax.legend(cols)
     ax.margins(y=0.1)
