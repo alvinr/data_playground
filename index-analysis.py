@@ -338,12 +338,9 @@ def plot():
 
     # This code is required to but the bar end label on the correct artist (box). Some values are zero, which means you cannot use
     # ax.contrainer[-1] to set the label. You have to find the last non-zero value, so that the end label is attached to that artist
-    last_nonzero = list(df[cols].ne(0).apply(lambda x: x[::-1].idxmax(), axis=1))
+    last_nonzero_cols = list(df[cols].ne(0).apply(lambda x: x[::-1].idxmax(), axis=1))
     for i, col in enumerate(cols):
-      bar_end_labels = [""] * len(last_nonzero)
-      for j in range(len(last_nonzero)):
-        if ( col == last_nonzero[j]):
-          bar_end_labels[j] = tot_labels[j]
+      bar_end_labels = [tot_labels[j] if col == v else '' for j, v in enumerate(last_nonzero_cols)]
       ax.bar_label(ax.containers[i], labels=bar_end_labels, label_type='edge', rotation=45, padding=1)
 
     ax.legend(bbox_to_anchor=(1.05, 1), loc='best')
