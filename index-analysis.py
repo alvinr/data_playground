@@ -100,6 +100,7 @@ def process(args):
       version    = row[1]
       nodes      = row[2]
       indexes    = row[3]
+      ml_nodes   = ""
       if (len(row) > 4):
         # allows backward compatibility with older samples
         ml_nodes = row[4]
