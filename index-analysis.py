@@ -9,6 +9,9 @@ cluster_ram_summary_by_shard = []
 cluster_ml_ram_summary_by_shard = []
 cluster_ml_ram_count_by_shard = []
 
+index_count_bins = []
+index_count_labels = []
+cluster_idx_summary = []
 
 cluster_size_bins = []
 cluster_size_labels  = []
@@ -184,6 +187,8 @@ def process(args):
         update_hist([max(idx_sizes)], args.idxbucketsize, cluster_ml_ram_summary_by_shard[max_shard], values2=[round(cluster_ml_ram_total)], countOnly=False)
         update_hist([max(idx_sizes)], args.idxbucketsize, cluster_ml_ram_count_by_shard[max_shard])
 
+      update_hist([len(idx_names)], args.idxcountbucketsize, cluster_idx_summary, countOnly=True)
+
       update_largest(max_index_size_found, idx_sizes, idx_names, cluster_id)
       update_largest(largest_cluster_found, [cluster_total], [cluster_id])
       update_largest(max_ram_found, [cluster_ram_total], [cluster_id])
@@ -222,6 +227,9 @@ def process(args):
   print("=== Cluster ML Ram (GB) by Max Index Size by Shard")
   print(*list(["Shard"] + index_size_labels), sep='\t')
   [ print(*[shard_dist_labels[i], *v], sep='\t') for i,v in enumerate(cluster_ml_ram_summary_by_shard) ]
+  print("=== Total Indexes by Cluster distribution")
+  print(*list(index_count_labels), sep='\t')
+  print(*cluster_idx_summary, sep='\t')
 
 
   print("=== Stats ")
@@ -430,6 +438,9 @@ def doit():
   parser.add_argument("--numclusterbuckets", help="Number of Cluster RAM Buckets", default=8, type=int)
   parser.add_argument("--version", help="Version to filter on", default="")
   parser.add_argument("--exclude_ds", help="Exclude Data Streams", default=False, type=bool)
+  parser.add_argument("--idxcountbuckets", help="Number of buckets to count indexes by cluster",  default=10, type=int)
+  parser.add_argument("--idxcountbucketsize", help="Number of indexes in in counted bucket", default=5, type=int)
+
   args=parser.parse_args()
 
   import numpy as np
@@ -442,11 +453,16 @@ def doit():
   global ds_summary
   global ds_counts
 
+  global index_count_bins
+  global index_count_labels
+  global cluster_idx_summary
+
   global cluster_summary
   global cluster_ram_summary
   global cluster_ram_summary_by_shard
   global cluster_ml_ram_summary_by_shard
   global cluster_ml_ram_count_by_shard
+  global cluster_idx_summary
 
   global cluster_size_bins
   global cluster_size_labels
@@ -468,10 +484,15 @@ def doit():
   idx_ds_summary = [0] * len(index_size_bins)
   idx_ri_summary = [0] * len(index_size_bins)
   cluster_summary = [0] * len(index_size_bins)
+  cluster_summary = [0] * len(index_size_bins)
   cluster_ram_summary = [0] * len(index_size_bins)
   cluster_ram_summary_by_shard = [ [0 for y in range(len(index_size_bins))] for x in range(0, args.numshardbuckets+1) ]
   cluster_ml_ram_summary_by_shard = [ [0 for y in range(len(index_size_bins))] for x in range(0, args.numshardbuckets+1) ]
   cluster_ml_ram_count_by_shard = [ [0 for y in range(len(index_size_bins))] for x in range(0, args.numshardbuckets+1) ]
+
+  index_count_bins = [int(x)*args.idxcountbuckets for x in range(0,args.idxcountbuckets+1)]
+  index_count_labels = [">"+ str(x) for x in index_count_bins]
+  cluster_idx_summary = [0] * len(index_count_bins)
 
   ds_summary = [0] * len(index_size_bins)
   ds_counts = [0] * len(index_size_bins)
