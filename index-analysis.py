@@ -25,6 +25,7 @@ shard_dist = []
 shard_dist_labels = []
 shard_size_dist = []
 
+idx_choices = ('all','datastream','regular')
 
 def process(args):
   import csv
@@ -127,12 +128,11 @@ def process(args):
 
       k = [i for i in [i.split(',') for i in indexes.split(';')[:-1]]]
       k = [i for i in k if len(i) == 3]
-      if args.exclude_ds == True:
+      if args.include_idx_type == 'datastream':
+        k = [v for i,v in enumerate(k) if re.match(ds_pattern, v[0]) is not None]
+      elif args.include_idx_type == 'regular':
         k = [v for i,v in enumerate(k) if re.match(ds_pattern, v[0]) is None]
       k = [l for l in [[j(k or 0) for j, k in zip(tp, i)] for i in k] if l[2] > 0]
-
-      # This is the above three lines in one line, harder to debug!
-      # k = [l for l in [l for l in [[j(k or 0) for j, k in zip(tp, i)] for i in [i.split(',') for i in indexes.split(';')[:-1]]] if len(l) == 3] if l[2] > 0 ]
 
       if len(k) == 0:
         no_indexes_over_1mb += 1
@@ -437,7 +437,8 @@ def doit():
   parser.add_argument("--clusterbucketsize", help="Size of Cluster RAM Buckets (in GB)", default=64, type=int)
   parser.add_argument("--numclusterbuckets", help="Number of Cluster RAM Buckets", default=8, type=int)
   parser.add_argument("--version", help="Version to filter on", default="")
-  parser.add_argument("--exclude_ds", help="Exclude Data Streams", default=False, type=bool)
+  global idx_choices
+  parser.add_argument("--include_idx_type", choices=idx_choices, help="Which indexes to includes, choose from %(idx_choices)", default='all')
   parser.add_argument("--idxcountbuckets", help="Number of buckets to count indexes by cluster",  default=10, type=int)
   parser.add_argument("--idxcountbucketsize", help="Number of indexes in in counted bucket", default=5, type=int)
 
