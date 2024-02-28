@@ -2,7 +2,7 @@
 Playing with data and data visualization
 
 ## get_cat_indices.sh
-This script collects the index stats from a list of cluster ids. The cluser ids are provided in a newline sepearted file.
+This script collects the index stats from a list of cluster ids. The cluser ids are provided in a newline seperated file.
 
 
 ### Pre-preqs
