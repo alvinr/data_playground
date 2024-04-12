@@ -1,6 +1,7 @@
 idx_summary = []
 idx_ds_summary = []
 idx_ri_summary = []
+idx_logs_summary = []
 ds_summary = []
 ds_counts = []
 cluster_summary = []
@@ -63,6 +64,8 @@ def process(args):
         r'(?P<name>.*)-'
         r'(?P<suffix>\d{4}\.\d{2}\.\d{2}-\d{6})'
     ,re.IGNORECASE)
+  logs_pattern = re.compile(r'^logs-.*-.*$')
+
   ver_match = re.compile(args.version, re.IGNORECASE)
 
   cluster_details = []
@@ -147,10 +150,12 @@ def process(args):
       global idx_summary
       idx_summary = np.add(idx_counts, idx_summary)
 
-      idx_ds_sizes = [idx_sizes[i] for i,v in enumerate(idx_names) if ".ds" in v]
-      idx_ri_sizes = [idx_sizes[i] for i,v in enumerate(idx_names) if ".ds" not in v]
+      idx_ds_sizes = [idx_sizes[i] for i,v in enumerate(idx_names) if re.match(ds_pattern,v) is not None]
+      idx_ri_sizes = [idx_sizes[i] for i,v in enumerate(idx_names) if re.match(ds_pattern,v) is None]
+      idx_logs_sizes = [idx_sizes[i] for i,v in enumerate(idx_names) if re.match(logs_pattern,v) is not None]
       update_hist(idx_ds_sizes, args.idxbucketsize, idx_ds_summary)
       update_hist(idx_ri_sizes, args.idxbucketsize, idx_ri_summary)
+      update_hist(idx_logs_sizes, args.idxbucketsize, idx_logs_summary)
 
       # Compute the size of the Data Streams based on the Data Stream name embeeded into the index names
       ds_idx_sizes = {}
@@ -247,6 +252,7 @@ def process(args):
   print("Largest number of shards            %d %s in Cluster %s" % (largest_number_of_shards['value'], largest_number_of_shards['name'], largest_number_of_shards['extra']))
   print("Largest Data Stream                 %d (GB) in Data Stream %s in Cluster %s" % (largest_ds['value'], largest_ds['name'], largest_ds['extra']))
   print("Percentage of Data Streams          %.2f%%" % (( sum(idx_ds_summary) / ( sum(idx_ds_summary) + sum(idx_ri_summary)))*100) )
+  print("Percentage of Logs of Data Streams  %.2f%%" % (( sum(idx_logs_summary) / ( sum(idx_logs_summary) + sum(idx_ri_summary)))*100) )
   print("Total RAM deployed                  %d (GB)" % (total_ram))
   print("Total ML RAM deployed               %d (GB)" % (total_ml_ram))
 
@@ -451,6 +457,7 @@ def doit():
   global idx_summary
   global idx_ds_summary
   global idx_ri_summary
+  global idx_logs_summary
   global ds_summary
   global ds_counts
 
@@ -484,6 +491,7 @@ def doit():
   idx_summary = [0] * len(index_size_bins)
   idx_ds_summary = [0] * len(index_size_bins)
   idx_ri_summary = [0] * len(index_size_bins)
+  idx_logs_summary = [0] * len(index_size_bins)
   cluster_summary = [0] * len(index_size_bins)
   cluster_summary = [0] * len(index_size_bins)
   cluster_ram_summary = [0] * len(index_size_bins)
