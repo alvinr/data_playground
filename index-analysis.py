@@ -64,9 +64,8 @@ def process(args):
         r'(?P<name>.*)-'
         r'(?P<suffix>\d{4}\.\d{2}\.\d{2}-\d{6})'
     ,re.IGNORECASE)
-  logs_pattern = re.compile(r'^logs-.*-.*$')
-
   ver_match = re.compile(args.version, re.IGNORECASE)
+  logs_pattern = re.compile(r'^\.ds-logs.*-*$', re.IGNORECASE)
 
   cluster_details = []
   max_index_size_found={'name': '', 'value': 0, 'extra':''}
@@ -412,6 +411,8 @@ def plot():
             color=['green'])
   plot_stacked(index_size_labels, [idx_ds_summary, idx_ri_summary], ["Data Streams", "Regular Indexes"],
                    "Data Streams vs. Regular Indexes by Index Size as Percentage (with counts)", 'Index Size (GB)', 'Percentage', color=['limegreen', 'orange'])
+  plot_stacked(index_size_labels, [idx_ds_summary, idx_logs_summary], ["Data Streams", "Logs"],
+                   "Data Streams vs. Log Prefix by Index Size as Percentage (with counts)", 'Index Size (GB)', 'Percentage', color=['limegreen', 'orange'])
 
   plot_pct_pie(index_size_labels, shard_dist, shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage')
   plot_pct_pie(index_size_labels, shard_dist, shard_dist_labels, "Index Size by Shard Distribution", 'Shards', 'Percentage', transpose=True)
